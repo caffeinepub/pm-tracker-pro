@@ -12,6 +12,7 @@ import DashboardPage from "./pages/DashboardPage";
 import HistoryPage from "./pages/HistoryPage";
 import LoginPage from "./pages/LoginPage";
 import PreventivePage from "./pages/PreventivePage";
+import TaskListPage from "./pages/TaskListPage";
 
 class ErrorBoundary extends React.Component<
   { children: ReactNode },
@@ -77,7 +78,6 @@ class ErrorBoundary extends React.Component<
 
 function AppRouter() {
   const { currentPage } = useApp();
-
   switch (currentPage) {
     case "login":
       return <LoginPage />;
@@ -99,6 +99,8 @@ function AppRouter() {
       return <CapaPage />;
     case "history":
       return <HistoryPage />;
+    case "task-list":
+      return <TaskListPage />;
     default:
       return <LoginPage />;
   }

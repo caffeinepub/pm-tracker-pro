@@ -1,34 +1,39 @@
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import {
   Activity,
-  AlertCircle,
   AlertTriangle,
   BarChart2,
-  Bell,
   CheckCircle2,
-  ChevronRight,
+  ClipboardCheck,
   Clock,
   Cpu,
   Download,
   LayoutGrid,
   LogOut,
-  Server,
   Settings,
   Shield,
-  Wifi,
+  Target,
   Wrench,
-  XCircle,
+  Zap,
 } from "lucide-react";
 import { motion } from "motion/react";
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
 import {
   Bar,
-  BarChart,
   CartesianGrid,
   ComposedChart,
   Legend,
   Line,
+  ReferenceLine,
   ResponsiveContainer,
   Tooltip,
   XAxis,
@@ -37,10 +42,12 @@ import {
 import { toast } from "sonner";
 import MorningPopup from "../components/MorningPopup";
 import NotificationBell from "../components/NotificationBell";
+import type { BDTargets } from "../context/AppContext";
 import { useApp } from "../context/AppContext";
 import { exportAllDataToExcel } from "../lib/exportExcel";
 
-const MONTHS = [
+const SECTIONS = ["Powder Coating", "Machine Shop", "Utility"] as const;
+const MONTH_LABELS = [
   "Jan",
   "Feb",
   "Mar",
@@ -75,7 +82,7 @@ function KPICard({
       initial={{ opacity: 0, y: 20 }}
       animate={{ opacity: 1, y: 0 }}
       transition={{ delay: index * 0.08, duration: 0.4 }}
-      className={`${colorClass} rounded-xl p-5 flex items-start justify-between`}
+      className={`${colorClass} rounded-xl p-4 flex items-start justify-between`}
     >
       <div>
         <p
@@ -85,7 +92,7 @@ function KPICard({
           {title}
         </p>
         <p
-          className="text-4xl font-bold tracking-tight"
+          className="text-3xl font-bold tracking-tight"
           style={{
             fontFamily: "BricolageGrotesque, sans-serif",
             color: "oklch(0.96 0.004 260)",
@@ -103,10 +110,10 @@ function KPICard({
         )}
       </div>
       <div
-        className="p-2.5 rounded-lg"
+        className="p-2 rounded-lg"
         style={{ background: "oklch(1 0 0 / 0.10)" }}
       >
-        <Icon className="w-6 h-6" style={{ color: "oklch(0.96 0.004 260)" }} />
+        <Icon className="w-5 h-5" style={{ color: "oklch(0.96 0.004 260)" }} />
       </div>
     </motion.div>
   );
@@ -141,7 +148,7 @@ const CustomTooltip = ({
               className="font-bold"
               style={{ color: "oklch(0.96 0.004 260)" }}
             >
-              {p.value}
+              {typeof p.value === "number" ? p.value.toFixed(1) : p.value}
             </span>
           </div>
         ))}
@@ -151,17 +158,33 @@ const CustomTooltip = ({
   return null;
 };
 
-function formatStatusLabel(status: string): string {
-  if (status === "pending-approval") return "Waiting Approval";
-  if (status === "completed") return "Completed";
-  if (status === "rejected") return "Rejected";
-  return status.charAt(0).toUpperCase() + status.slice(1);
-}
-
-function statusBadgeClass(status: string): string {
-  if (status === "completed") return "status-completed";
-  if (status === "rejected") return "status-rejected";
-  return "status-pending";
+function SectionHeader({
+  icon: Icon,
+  title,
+  children,
+}: { icon: React.ElementType; title: string; children?: React.ReactNode }) {
+  return (
+    <div className="flex items-center justify-between mb-4">
+      <div className="flex items-center gap-2">
+        <div
+          className="p-1.5 rounded-lg"
+          style={{
+            background: "oklch(0.70 0.188 55 / 0.12)",
+            border: "1px solid oklch(0.70 0.188 55 / 0.3)",
+          }}
+        >
+          <Icon className="w-4 h-4" style={{ color: "oklch(0.80 0.180 55)" }} />
+        </div>
+        <h2
+          className="text-lg font-bold"
+          style={{ fontFamily: "BricolageGrotesque, sans-serif" }}
+        >
+          {title}
+        </h2>
+      </div>
+      {children}
+    </div>
+  );
 }
 
 export default function DashboardPage() {
@@ -178,50 +201,54 @@ export default function DashboardPage() {
     approveRecord,
     rejectRecord,
     breakdownRecords,
-    capaRecords,
+
+    sectionHoursConfigs,
     prioritizedMachineIds,
+    taskRecords,
+    bdTargets,
+    updateBDTargets,
   } = useApp();
+
+  const [showTargetDialog, setShowTargetDialog] = useState(false);
+  const [targetForm, setTargetForm] = useState<BDTargets>({ ...bdTargets });
 
   const currentMonth = new Date().getMonth() + 1;
   const currentMonthBig = BigInt(currentMonth);
+  const currentYear = new Date().getFullYear();
 
-  const todayPlans = useMemo(
-    () => pmPlans.filter((p) => p.month === currentMonthBig),
+  // ---- Preventive Maintenance KPIs ----
+  const totalPlannedThisMonth = useMemo(
+    () => pmPlans.filter((p) => p.month === currentMonthBig).length,
     [pmPlans, currentMonthBig],
   );
 
-  const todayMachines = useMemo(
-    () => machines.filter((m) => todayPlans.some((p) => p.machineId === m.id)),
-    [machines, todayPlans],
+  const pmCompletedThisMonth = useMemo(() => {
+    const start = new Date(currentYear, currentMonth - 1, 1).getTime();
+    const end = new Date(currentYear, currentMonth, 0, 23, 59, 59).getTime();
+    return pmRecords.filter(
+      (r) =>
+        r.status === "completed" &&
+        Number(r.completedDate) >= start &&
+        Number(r.completedDate) <= end,
+    ).length;
+  }, [pmRecords, currentMonth, currentYear]);
+
+  const pmCompletionPct =
+    totalPlannedThisMonth > 0
+      ? Math.round((pmCompletedThisMonth / totalPlannedThisMonth) * 100)
+      : 0;
+
+  const prevPendingApprovals = useMemo(
+    () => pmRecords.filter((r) => r.status === "pending-approval"),
+    [pmRecords],
   );
 
-  const sortedTodayMachines = useMemo(() => {
-    return [...todayMachines].sort((a, b) => {
-      const aPrio = prioritizedMachineIds.includes(a.id) ? 0 : 1;
-      const bPrio = prioritizedMachineIds.includes(b.id) ? 0 : 1;
-      return aPrio - bPrio;
-    });
-  }, [todayMachines, prioritizedMachineIds]);
-
-  const completedCount = useMemo(
-    () => todayMachines.filter((m) => isMachineCompleted(m.id)).length,
-    [todayMachines, isMachineCompleted],
+  const pendingBreakdownApprovals = useMemo(
+    () => breakdownRecords.filter((r) => r.status === "pending-approval"),
+    [breakdownRecords],
   );
 
-  const MONTH_LABELS = [
-    "Jan",
-    "Feb",
-    "Mar",
-    "Apr",
-    "May",
-    "Jun",
-    "Jul",
-    "Aug",
-    "Sep",
-    "Oct",
-    "Nov",
-    "Dec",
-  ];
+  // PM Plan vs Actual chart data
   const chartData = useMemo(() => {
     return MONTH_LABELS.map((month, idx) => {
       const monthNum = BigInt(idx + 1);
@@ -237,18 +264,96 @@ export default function DashboardPage() {
     });
   }, [pmPlans, pmRecords]);
 
-  const completionPct =
-    todayMachines.length > 0
-      ? Math.round((completedCount / todayMachines.length) * 100)
-      : 0;
+  // ---- Breakdown Section KPIs ----
+  const sectionKPIs = useMemo(() => {
+    return SECTIONS.map((section) => {
+      const sectionMachines = machines.filter((m) => m.section === section);
+      const sectionMachineIds = new Set(sectionMachines.map((m) => m.id));
+      const bds = breakdownRecords.filter(
+        (b) =>
+          sectionMachineIds.has(b.machineId) &&
+          b.status === "approved-breakdown",
+      );
+      const totalBDHours = bds.reduce(
+        (sum, b) => sum + b.durationMinutes / 60,
+        0,
+      );
+      const totalBDCount = bds.length;
+      const config = sectionHoursConfigs.find((c) => c.section === section);
+      const availableHours = config
+        ? config.availableProductionHrs - config.powerOff
+        : 2000;
+      const bdPct =
+        availableHours > 0 ? (totalBDHours / availableHours) * 100 : 0;
+      const uptime = 100 - bdPct;
+      const mttr = totalBDCount > 0 ? totalBDHours / totalBDCount : 0;
+      const mtbf =
+        totalBDCount > 0 ? availableHours / totalBDCount : availableHours;
+      return { section, bdPct, uptime, mttr, mtbf, totalBDHours, totalBDCount };
+    });
+  }, [machines, breakdownRecords, sectionHoursConfigs]);
 
-  const today = new Date();
-  const todayLabel = today.toLocaleDateString("en-IN", {
-    weekday: "long",
-    day: "numeric",
-    month: "long",
-    year: "numeric",
-  });
+  // Chart data for section-wise charts
+  const bdChartData = useMemo(() => {
+    return sectionKPIs.map((s) => ({
+      section: s.section.replace(" ", "\n"),
+      sectionFull: s.section,
+      actual: Math.round(s.bdPct * 10) / 10,
+      target: bdTargets[s.section as keyof BDTargets]?.bdPct ?? 5,
+    }));
+  }, [sectionKPIs, bdTargets]);
+
+  const mttrChartData = useMemo(() => {
+    return sectionKPIs.map((s) => ({
+      section: s.section.replace(" ", "\n"),
+      actual: Math.round(s.mttr * 10) / 10,
+      target: bdTargets[s.section as keyof BDTargets]?.mttr ?? 60,
+    }));
+  }, [sectionKPIs, bdTargets]);
+
+  const mtbfChartData = useMemo(() => {
+    return sectionKPIs.map((s) => ({
+      section: s.section.replace(" ", "\n"),
+      actual: Math.round(s.mtbf * 10) / 10,
+      target: bdTargets[s.section as keyof BDTargets]?.mtbf ?? 500,
+    }));
+  }, [sectionKPIs, bdTargets]);
+
+  const uptimeChartData = useMemo(() => {
+    return sectionKPIs.map((s) => ({
+      section: s.section.replace(" ", "\n"),
+      actual: Math.round(s.uptime * 10) / 10,
+      target: bdTargets[s.section as keyof BDTargets]?.uptime ?? 95,
+    }));
+  }, [sectionKPIs, bdTargets]);
+
+  // ---- Planner KPIs ----
+  const tasksPending = useMemo(
+    () =>
+      taskRecords.filter((t) =>
+        ["not-started", "in-process", "hold"].includes(t.status),
+      ).length,
+    [taskRecords],
+  );
+  const tasksCompleted = useMemo(
+    () => taskRecords.filter((t) => t.status === "complete").length,
+    [taskRecords],
+  );
+  const tasksHighPriority = useMemo(
+    () =>
+      taskRecords.filter(
+        (t) =>
+          t.priority === "high" && !["complete", "canceled"].includes(t.status),
+      ).length,
+    [taskRecords],
+  );
+
+  // Today's machines
+  const todayMachines = useMemo(() => {
+    return machines.filter((m) =>
+      pmPlans.some((p) => p.machineId === m.id && p.month === currentMonthBig),
+    );
+  }, [machines, pmPlans, currentMonthBig]);
 
   const handleMachineClick = (machineId: string) => {
     const machine = machines.find((m) => m.id === machineId);
@@ -262,46 +367,21 @@ export default function DashboardPage() {
 
   const handleDownloadReport = () => {
     exportAllDataToExcel(machines, pmPlans, pmRecords, checklistTemplates);
-    toast.success("Report downloaded! Check your downloads folder.");
+    toast.success("Report downloaded!");
   };
 
-  const recentActivity = useMemo(
-    () =>
-      [...pmRecords]
-        .sort((a, b) => Number(b.completedDate) - Number(a.completedDate))
-        .slice(0, 5),
-    [pmRecords],
-  );
+  const handleSaveTargets = () => {
+    updateBDTargets(targetForm);
+    toast.success("Targets updated");
+    setShowTargetDialog(false);
+  };
 
-  const pendingApprovals = useMemo(
-    () => pmRecords.filter((r) => r.status === "pending-approval"),
-    [pmRecords],
-  );
-
-  const pendingBreakdownApprovals = useMemo(
-    () => breakdownRecords.filter((r) => r.status === "pending-approval"),
-    [breakdownRecords],
-  );
-
-  const todayMidnight = useMemo(() => {
-    const d = new Date();
-    d.setHours(0, 0, 0, 0);
-    return d.getTime();
-  }, []);
-  const pmRecordsToday = useMemo(
-    () =>
-      pmRecords.filter((r) => {
-        const d = new Date(Number(r.completedDate));
-        d.setHours(0, 0, 0, 0);
-        return d.getTime() === todayMidnight;
-      }).length,
-    [pmRecords, todayMidnight],
-  );
-
-  const pendingThisMonth = useMemo(
-    () => todayMachines.filter((m) => !isMachineCompleted(m.id)).length,
-    [todayMachines, isMachineCompleted],
-  );
+  const todayLabel = new Date().toLocaleDateString("en-IN", {
+    weekday: "long",
+    day: "numeric",
+    month: "long",
+    year: "numeric",
+  });
 
   return (
     <>
@@ -340,46 +420,36 @@ export default function DashboardPage() {
                 <span style={{ color: "oklch(0.80 0.180 55)" }}>Tracker</span>
               </span>
             </div>
-
             <nav className="hidden md:flex items-center gap-1">
-              <button
-                type="button"
-                data-ocid="nav.link"
-                className="px-4 py-2 rounded-lg text-sm font-medium transition-colors"
-                style={{
-                  background: "oklch(0.70 0.188 55 / 0.15)",
-                  color: "oklch(0.80 0.180 55)",
-                }}
-              >
-                Dashboard
-              </button>
-              <button
-                type="button"
-                data-ocid="nav.link"
-                onClick={() => navigate("preventive")}
-                className="px-4 py-2 rounded-lg text-sm font-medium transition-colors hover:bg-white/5"
-                style={{ color: "oklch(0.68 0.010 260)" }}
-              >
-                PM
-              </button>
-              <button
-                type="button"
-                data-ocid="nav.link"
-                onClick={() => navigate("breakdown-panel")}
-                className="px-4 py-2 rounded-lg text-sm font-medium transition-colors hover:bg-white/5"
-                style={{ color: "oklch(0.68 0.010 260)" }}
-              >
-                Breakdown
-              </button>
-              <button
-                type="button"
-                data-ocid="nav.link"
-                onClick={() => navigate("analysis")}
-                className="px-4 py-2 rounded-lg text-sm font-medium transition-colors hover:bg-white/5"
-                style={{ color: "oklch(0.68 0.010 260)" }}
-              >
-                Analysis
-              </button>
+              {[
+                {
+                  label: "Dashboard",
+                  page: "dashboard" as const,
+                  active: true,
+                },
+                { label: "PM", page: "preventive" as const },
+                { label: "Breakdown", page: "breakdown-panel" as const },
+                { label: "Analysis", page: "analysis" as const },
+                { label: "Tasks", page: "task-list" as const },
+              ].map((item) => (
+                <button
+                  key={item.label}
+                  type="button"
+                  data-ocid="nav.link"
+                  onClick={() => navigate(item.page)}
+                  className="px-4 py-2 rounded-lg text-sm font-medium transition-colors"
+                  style={
+                    item.active
+                      ? {
+                          background: "oklch(0.70 0.188 55 / 0.15)",
+                          color: "oklch(0.80 0.180 55)",
+                        }
+                      : { color: "oklch(0.68 0.010 260)" }
+                  }
+                >
+                  {item.label}
+                </button>
+              ))}
               {user?.role === "admin" && (
                 <button
                   type="button"
@@ -392,7 +462,6 @@ export default function DashboardPage() {
                 </button>
               )}
             </nav>
-
             <div className="flex items-center gap-3">
               <NotificationBell />
               <div
@@ -422,9 +491,7 @@ export default function DashboardPage() {
                 <button
                   type="button"
                   data-ocid="nav.button"
-                  onClick={() => {
-                    logout();
-                  }}
+                  onClick={() => logout()}
                   className="ml-2 p-2 rounded-lg hover:bg-white/5"
                   style={{ color: "oklch(0.68 0.010 260)" }}
                   title="Logout"
@@ -438,7 +505,7 @@ export default function DashboardPage() {
 
         {/* Hero Band */}
         <div
-          className="relative h-36 md:h-44 flex items-center"
+          className="relative h-28 md:h-36 flex items-center"
           style={{
             backgroundImage:
               "url('/assets/generated/factory-bg.dim_1920x600.jpg')",
@@ -448,111 +515,159 @@ export default function DashboardPage() {
         >
           <div
             className="absolute inset-0"
-            style={{
-              background:
-                "linear-gradient(90deg, rgba(11,18,32,0.92) 0%, rgba(11,18,32,0.75) 100%)",
-            }}
+            style={{ background: "oklch(0.165 0.022 252 / 0.72)" }}
           />
-          <div className="relative z-10 max-w-7xl mx-auto px-4 w-full">
-            <motion.div
-              initial={{ opacity: 0, x: -20 }}
-              animate={{ opacity: 1, x: 0 }}
-              transition={{ duration: 0.5 }}
-            >
-              <p
-                className="text-sm font-medium mb-1"
-                style={{ color: "oklch(0.80 0.180 55)" }}
+          <div className="relative max-w-7xl mx-auto px-4 w-full">
+            <div className="flex items-end justify-between">
+              <div>
+                <p
+                  className="text-xs uppercase tracking-widest mb-1"
+                  style={{ color: "oklch(0.80 0.180 55)" }}
+                >
+                  Plant Maintenance Management System
+                </p>
+                <h1
+                  className="text-2xl md:text-3xl font-bold"
+                  style={{ fontFamily: "BricolageGrotesque, sans-serif" }}
+                >
+                  Dashboard
+                </h1>
+                <p
+                  className="text-xs mt-1"
+                  style={{ color: "oklch(0.60 0.010 260)" }}
+                >
+                  {todayLabel}
+                </p>
+              </div>
+              <Button
+                data-ocid="dashboard.download_button"
+                size="sm"
+                onClick={handleDownloadReport}
+                className="hidden md:flex items-center gap-1.5"
+                style={{
+                  background: "oklch(0.70 0.188 55 / 0.18)",
+                  border: "1px solid oklch(0.70 0.188 55 / 0.4)",
+                  color: "oklch(0.80 0.180 55)",
+                }}
               >
-                {todayLabel}
-              </p>
-              <h1
-                className="text-2xl md:text-3xl font-bold"
-                style={{ fontFamily: "BricolageGrotesque, sans-serif" }}
-              >
-                Welcome, {user?.name?.split(" ")[0]}! 👋
-              </h1>
-              <p
-                className="text-sm mt-1"
-                style={{ color: "oklch(0.75 0.008 260)" }}
-              >
-                Here's your PM overview for today — {todayMachines.length}{" "}
-                machines scheduled.
-              </p>
-            </motion.div>
-          </div>
-          <div className="absolute right-6 bottom-4 hidden md:flex items-center gap-2">
-            <Shield
-              className="w-4 h-4"
-              style={{ color: "oklch(0.80 0.180 55 / 0.6)" }}
-            />
-            <span
-              className="text-xs font-medium"
-              style={{ color: "oklch(0.80 0.180 55 / 0.6)" }}
-            >
-              SYSTEM ACTIVE
-            </span>
+                <Download className="w-3.5 h-3.5" /> Download Report
+              </Button>
+            </div>
           </div>
         </div>
 
-        <main className="flex-1 max-w-7xl mx-auto px-4 py-6 w-full pb-20 md:pb-0">
-          {/* KPI + Chart grid */}
-          <div className="grid grid-cols-1 xl:grid-cols-3 gap-5 mb-6">
-            {/* KPI cards 2x2 */}
-            <div className="xl:col-span-1 grid grid-cols-2 gap-4">
+        {/* Main Content */}
+        <main className="flex-1 max-w-7xl mx-auto w-full px-4 py-6 pb-24 space-y-8">
+          {/* ===== SECTION 1: PREVENTIVE MAINTENANCE ===== */}
+          <section data-ocid="dashboard.section">
+            <SectionHeader icon={ClipboardCheck} title="Preventive Maintenance">
+              <Button
+                size="sm"
+                data-ocid="dashboard.secondary_button"
+                onClick={() => navigate("preventive")}
+                style={{
+                  background: "oklch(0.22 0.022 252)",
+                  border: "1px solid oklch(0.34 0.030 252)",
+                  color: "oklch(0.68 0.010 260)",
+                  fontSize: "12px",
+                }}
+              >
+                View All PM
+              </Button>
+            </SectionHeader>
+
+            {/* KPI Cards */}
+            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3 mb-5">
               <KPICard
-                title="Total Machines"
-                value={machines.length}
-                subtitle="In system"
+                title="Planned This Month"
+                value={totalPlannedThisMonth}
+                subtitle="Machines"
                 icon={Cpu}
                 colorClass="kpi-steel-blue"
                 index={0}
               />
               <KPICard
-                title="Today Planned"
-                value={todayMachines.length}
-                subtitle={`Month ${MONTHS[currentMonth - 1]}`}
+                title="Today's PM Plan"
+                value={prioritizedMachineIds.length}
+                subtitle="Prioritized"
                 icon={BarChart2}
                 colorClass="kpi-blue"
                 index={1}
               />
               <KPICard
-                title="Completed"
-                value={completedCount}
-                subtitle="Today"
+                title="PM Completed"
+                value={pmCompletedThisMonth}
+                subtitle="This month"
                 icon={CheckCircle2}
                 colorClass="kpi-green"
                 index={2}
               />
               <KPICard
-                title="PM Completion"
-                value={`${completionPct}%`}
+                title="Completion %"
+                value={`${pmCompletionPct}%`}
                 subtitle="Monthly rate"
-                icon={Clock}
+                icon={Activity}
                 colorClass="kpi-orange"
                 index={3}
               />
+              <div
+                className="col-span-2 rounded-xl p-4 flex items-center justify-between"
+                style={{
+                  background:
+                    "linear-gradient(135deg, oklch(0.32 0.10 15), oklch(0.22 0.07 15))",
+                  border: "1px solid oklch(0.50 0.15 20 / 0.5)",
+                }}
+              >
+                <div>
+                  <p
+                    className="text-xs font-semibold uppercase tracking-widest mb-1"
+                    style={{ color: "oklch(0.75 0.008 260 / 0.85)" }}
+                  >
+                    Preventive Approvals Pending
+                  </p>
+                  <p
+                    className="text-3xl font-bold"
+                    style={{
+                      fontFamily: "BricolageGrotesque, sans-serif",
+                      color: "oklch(0.96 0.004 260)",
+                    }}
+                  >
+                    {prevPendingApprovals.length}
+                  </p>
+                  <p
+                    className="text-xs mt-1"
+                    style={{ color: "oklch(0.75 0.008 260 / 0.7)" }}
+                  >
+                    Awaiting review
+                  </p>
+                </div>
+                <div
+                  className="p-2 rounded-lg"
+                  style={{ background: "oklch(1 0 0 / 0.10)" }}
+                >
+                  <Clock
+                    className="w-5 h-5"
+                    style={{ color: "oklch(0.96 0.004 260)" }}
+                  />
+                </div>
+              </div>
             </div>
 
-            {/* Plan vs Actual Chart */}
-            <motion.div
-              initial={{ opacity: 0, y: 20 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ delay: 0.3, duration: 0.5 }}
-              className="xl:col-span-2 industrial-card p-5"
-            >
+            {/* PM Plan vs Actual Chart */}
+            <div className="industrial-card p-5">
               <div className="flex items-center justify-between mb-4">
                 <div>
-                  <h2
-                    className="text-base font-semibold"
+                  <h3
+                    className="text-sm font-semibold"
                     style={{ fontFamily: "BricolageGrotesque, sans-serif" }}
                   >
                     Plan vs Actual
-                  </h2>
+                  </h3>
                   <p
                     className="text-xs mt-0.5"
                     style={{ color: "oklch(0.68 0.010 260)" }}
                   >
-                    Monthly PM completion — {new Date().getFullYear()}
+                    Monthly PM completion — {currentYear}
                   </p>
                 </div>
                 <BarChart2
@@ -610,368 +725,640 @@ export default function DashboardPage() {
                   />
                 </ComposedChart>
               </ResponsiveContainer>
-            </motion.div>
-          </div>
-
-          {/* Module Quick Actions */}
-          <motion.div
-            initial={{ opacity: 0, y: 20 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ delay: 0.32, duration: 0.5 }}
-            className="mb-6"
-          >
-            <div className="flex items-center gap-2 mb-3">
-              <LayoutGrid
-                className="w-4 h-4"
-                style={{ color: "oklch(0.80 0.180 55)" }}
-              />
-              <h2
-                className="text-base font-semibold"
-                style={{ fontFamily: "BricolageGrotesque, sans-serif" }}
-              >
-                Quick Actions
-              </h2>
             </div>
-            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">
-              {[
-                {
-                  label: "Report Breakdown",
-                  icon: AlertTriangle,
-                  color: "oklch(0.72 0.170 27)",
-                  bg: "oklch(0.62 0.220 25 / 0.12)",
-                  border: "oklch(0.62 0.220 25 / 0.3)",
-                  page: "breakdown-panel" as const,
-                },
-                ...(user?.role === "admin"
-                  ? [
-                      {
-                        label: "Breakdown",
-                        icon: Shield,
-                        color: "oklch(0.80 0.180 55)",
-                        bg: "oklch(0.70 0.188 55 / 0.12)",
-                        border: "oklch(0.70 0.188 55 / 0.3)",
-                        page: "breakdown-panel" as const,
-                      },
-                      {
-                        label: "Analysis",
-                        icon: Activity,
-                        color: "oklch(0.65 0.150 232)",
-                        bg: "oklch(0.50 0.065 232 / 0.12)",
-                        border: "oklch(0.50 0.065 232 / 0.3)",
-                        page: "analysis" as const,
-                      },
-                      {
-                        label: "PM Plans",
-                        icon: BarChart2,
-                        color: "oklch(0.75 0.130 145)",
-                        bg: "oklch(0.45 0.120 145 / 0.12)",
-                        border: "oklch(0.52 0.120 145 / 0.3)",
-                        page: "preventive" as const,
-                      },
-                      {
-                        label: "Approvals",
-                        icon: CheckCircle2,
-                        color: "oklch(0.82 0.16 60)",
-                        bg: "oklch(0.55 0.15 60 / 0.12)",
-                        border: "oklch(0.70 0.15 60 / 0.3)",
-                        page: "preventive" as const,
-                      },
-                      {
-                        label: "Upload Data",
-                        icon: Download,
-                        color: "oklch(0.68 0.010 260)",
-                        bg: "oklch(0.34 0.030 252 / 0.3)",
-                        border: "oklch(0.40 0.030 252)",
-                        page: "admin" as const,
-                      },
-                    ]
-                  : []),
-              ].map((item) => (
-                <motion.button
-                  key={item.label}
-                  type="button"
-                  whileHover={{ scale: 1.03, translateY: -2 }}
-                  whileTap={{ scale: 0.97 }}
-                  onClick={() => navigate(item.page)}
-                  className="industrial-card p-4 text-left flex items-center gap-3 cursor-pointer"
-                  style={{
-                    border: `1px solid ${item.border}`,
-                    background: item.bg,
-                  }}
-                  data-ocid={`quickaction.${item.label.toLowerCase().replace(/\s+/g, "_")}.button`}
+
+            {/* Pending Approvals table (admin only) */}
+            {user?.role === "admin" && prevPendingApprovals.length > 0 && (
+              <div className="industrial-card p-4 mt-4">
+                <h3
+                  className="text-sm font-semibold mb-3"
+                  style={{ color: "oklch(0.75 0.130 145)" }}
                 >
-                  <div
-                    className="p-2 rounded-lg shrink-0"
+                  Preventive Pending Approvals
+                </h3>
+                <div className="overflow-x-auto">
+                  <table className="w-full text-xs">
+                    <thead>
+                      <tr
+                        style={{
+                          borderBottom: "1px solid oklch(0.34 0.030 252)",
+                        }}
+                      >
+                        {["Machine", "Operator", "Date", "Actions"].map((h) => (
+                          <th
+                            key={h}
+                            className="text-left px-3 py-2 font-semibold uppercase tracking-wider"
+                            style={{ color: "oklch(0.50 0.010 260)" }}
+                          >
+                            {h}
+                          </th>
+                        ))}
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {prevPendingApprovals.slice(0, 5).map((record, idx) => {
+                        const machine = machines.find(
+                          (m) => m.id === record.machineId,
+                        );
+                        return (
+                          <tr
+                            key={record.id}
+                            data-ocid={`approvals.row.${idx + 1}`}
+                            style={{
+                              borderBottom:
+                                idx < prevPendingApprovals.length - 1
+                                  ? "1px solid oklch(0.28 0.020 252)"
+                                  : undefined,
+                            }}
+                          >
+                            <td className="px-3 py-2 font-medium">
+                              {machine?.name ?? record.machineId}
+                            </td>
+                            <td
+                              className="px-3 py-2"
+                              style={{ color: "oklch(0.68 0.010 260)" }}
+                            >
+                              {record.operatorName}
+                            </td>
+                            <td
+                              className="px-3 py-2"
+                              style={{ color: "oklch(0.55 0.010 260)" }}
+                            >
+                              {new Date(
+                                Number(record.completedDate),
+                              ).toLocaleDateString("en-IN")}
+                            </td>
+                            <td className="px-3 py-2">
+                              <div className="flex gap-2">
+                                <button
+                                  type="button"
+                                  data-ocid={`approvals.confirm_button.${idx + 1}`}
+                                  onClick={() => {
+                                    approveRecord(record.id);
+                                    toast.success("Approved");
+                                  }}
+                                  className="text-xs px-2 py-1 rounded font-semibold"
+                                  style={{
+                                    background: "oklch(0.45 0.12 145 / 0.20)",
+                                    color: "oklch(0.75 0.13 145)",
+                                    border:
+                                      "1px solid oklch(0.52 0.12 145 / 0.4)",
+                                  }}
+                                >
+                                  ✓ Approve
+                                </button>
+                                <button
+                                  type="button"
+                                  data-ocid={`approvals.delete_button.${idx + 1}`}
+                                  onClick={() => {
+                                    rejectRecord(record.id);
+                                    toast.info("Rejected");
+                                  }}
+                                  className="text-xs px-2 py-1 rounded font-semibold"
+                                  style={{
+                                    background: "oklch(0.45 0.18 27 / 0.20)",
+                                    color: "oklch(0.78 0.17 27)",
+                                    border:
+                                      "1px solid oklch(0.55 0.17 27 / 0.4)",
+                                  }}
+                                >
+                                  ✗ Reject
+                                </button>
+                              </div>
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            )}
+          </section>
+
+          {/* ===== SECTION 2: BREAKDOWN ANALYSIS ===== */}
+          <section data-ocid="dashboard.section">
+            <SectionHeader icon={AlertTriangle} title="Breakdown Analysis">
+              <div className="flex items-center gap-2">
+                {pendingBreakdownApprovals.length > 0 && (
+                  <Badge
+                    data-ocid="breakdown.panel"
+                    className="text-xs font-bold"
                     style={{
-                      background: item.bg,
-                      border: `1px solid ${item.border}`,
+                      background: "oklch(0.45 0.18 27 / 0.20)",
+                      color: "oklch(0.78 0.17 27)",
+                      border: "1px solid oklch(0.55 0.17 27 / 0.4)",
                     }}
                   >
-                    <item.icon
-                      className="w-4 h-4"
-                      style={{ color: item.color }}
-                    />
-                  </div>
-                  <div>
-                    <div
-                      className="text-sm font-semibold"
-                      style={{ color: item.color }}
+                    {pendingBreakdownApprovals.length} pending
+                  </Badge>
+                )}
+                {user?.role === "admin" && (
+                  <Button
+                    size="sm"
+                    data-ocid="dashboard.primary_button"
+                    onClick={() => {
+                      setTargetForm({ ...bdTargets });
+                      setShowTargetDialog(true);
+                    }}
+                    style={{
+                      background: "oklch(0.70 0.188 55 / 0.15)",
+                      border: "1px solid oklch(0.70 0.188 55 / 0.35)",
+                      color: "oklch(0.80 0.180 55)",
+                      fontSize: "12px",
+                    }}
+                  >
+                    <Target className="w-3 h-3 mr-1" /> Set Targets
+                  </Button>
+                )}
+                <Button
+                  size="sm"
+                  data-ocid="dashboard.secondary_button"
+                  onClick={() => navigate("breakdown-panel")}
+                  style={{
+                    background: "oklch(0.22 0.022 252)",
+                    border: "1px solid oklch(0.34 0.030 252)",
+                    color: "oklch(0.68 0.010 260)",
+                    fontSize: "12px",
+                  }}
+                >
+                  View Records
+                </Button>
+              </div>
+            </SectionHeader>
+
+            {/* Section KPI cards */}
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-5">
+              {sectionKPIs.map((s, idx) => (
+                <motion.div
+                  key={s.section}
+                  initial={{ opacity: 0, y: 16 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  transition={{ delay: idx * 0.1 }}
+                  className="industrial-card p-4"
+                >
+                  <div className="flex items-center justify-between mb-3">
+                    <h3
+                      className="text-sm font-bold"
+                      style={{ fontFamily: "BricolageGrotesque, sans-serif" }}
                     >
-                      {item.label}
-                    </div>
-                    <ChevronRight
-                      className="w-3 h-3 mt-0.5"
-                      style={{ color: "oklch(0.50 0.010 260)" }}
+                      {s.section}
+                    </h3>
+                    <Zap
+                      className="w-4 h-4"
+                      style={{ color: "oklch(0.80 0.180 55)" }}
                     />
                   </div>
-                </motion.button>
+                  <div className="grid grid-cols-2 gap-3">
+                    {[
+                      {
+                        label: "BD%",
+                        value: `${s.bdPct.toFixed(1)}%`,
+                        target: bdTargets[s.section as keyof BDTargets]?.bdPct,
+                        good:
+                          s.bdPct <=
+                          (bdTargets[s.section as keyof BDTargets]?.bdPct ?? 5),
+                      },
+                      {
+                        label: "Uptime%",
+                        value: `${s.uptime.toFixed(1)}%`,
+                        target: bdTargets[s.section as keyof BDTargets]?.uptime,
+                        good:
+                          s.uptime >=
+                          (bdTargets[s.section as keyof BDTargets]?.uptime ??
+                            95),
+                      },
+                      {
+                        label: "MTTR (h)",
+                        value: s.mttr.toFixed(1),
+                        target: bdTargets[s.section as keyof BDTargets]?.mttr,
+                        good:
+                          s.mttr <=
+                          (bdTargets[s.section as keyof BDTargets]?.mttr ?? 60),
+                      },
+                      {
+                        label: "MTBF (h)",
+                        value: s.mtbf.toFixed(0),
+                        target: bdTargets[s.section as keyof BDTargets]?.mtbf,
+                        good:
+                          s.mtbf >=
+                          (bdTargets[s.section as keyof BDTargets]?.mtbf ??
+                            500),
+                      },
+                    ].map((m) => (
+                      <div
+                        key={m.label}
+                        className="rounded-lg p-2"
+                        style={{ background: "oklch(0.19 0.020 255)" }}
+                      >
+                        <p
+                          className="text-xs"
+                          style={{ color: "oklch(0.55 0.010 260)" }}
+                        >
+                          {m.label}
+                        </p>
+                        <p
+                          className="text-lg font-bold"
+                          style={{
+                            color: m.good
+                              ? "oklch(0.75 0.13 145)"
+                              : "oklch(0.78 0.17 27)",
+                          }}
+                        >
+                          {m.value}
+                        </p>
+                        {m.target !== undefined && (
+                          <p
+                            className="text-xs"
+                            style={{ color: "oklch(0.45 0.010 260)" }}
+                          >
+                            Target: {m.target}
+                          </p>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                </motion.div>
               ))}
             </div>
-          </motion.div>
 
-          {/* Breakdown Analytics - New */}
-          {(breakdownRecords.filter((r) => r.status === "approved-breakdown")
-            .length > 0 ||
-            user?.role === "admin") && (
-            <motion.div
-              initial={{ opacity: 0, y: 20 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ delay: 0.35, duration: 0.5 }}
-              className="mb-6"
-            >
-              <div className="flex items-center gap-2 mb-4">
-                <Wrench
-                  className="w-4 h-4"
-                  style={{ color: "oklch(0.75 0.200 25)" }}
-                />
-                <h2
-                  className="text-base font-semibold"
-                  style={{ fontFamily: "BricolageGrotesque, sans-serif" }}
-                >
-                  Breakdown Analytics
-                </h2>
-              </div>
-              <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-4">
-                {[
-                  {
-                    label: "Total Breakdowns",
-                    value: breakdownRecords.filter(
-                      (r) => r.status === "approved-breakdown",
-                    ).length,
-                    color: "oklch(0.72 0.170 27)",
-                  },
-                  {
-                    label: "Open CAPAs",
-                    value: capaRecords.filter((c) => c.status === "Open")
-                      .length,
-                    color: "oklch(0.75 0.170 55)",
-                  },
-                  {
-                    label: "MTTR (avg min)",
-                    value: (() => {
-                      const bd = breakdownRecords.filter(
-                        (r) =>
-                          r.status === "approved-breakdown" &&
-                          r.durationMinutes > 0,
-                      );
-                      return bd.length
-                        ? Math.round(
-                            bd.reduce((s, r) => s + r.durationMinutes, 0) /
-                              bd.length,
-                          )
-                        : "-";
-                    })(),
-                    color: "oklch(0.65 0.150 232)",
-                  },
-                  {
-                    label: "Uptime %",
-                    value: (() => {
-                      const totalMins = breakdownRecords
-                        .filter((r) => r.status === "approved-breakdown")
-                        .reduce((s, r) => s + r.durationMinutes, 0);
-                      const totalAvail = 30 * 8 * 60;
-                      return `${Math.max(0, Math.round((1 - totalMins / totalAvail) * 100))}%`;
-                    })(),
-                    color: "oklch(0.60 0.155 145)",
-                  },
-                ].map((item) => (
-                  <div key={item.label} className="industrial-card p-3">
-                    <div
-                      className="text-xs mb-1"
-                      style={{ color: "oklch(0.68 0.010 260)" }}
+            {/* 4 Section-wise Charts */}
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              {[
+                {
+                  title: "BD% (Breakdown %)",
+                  data: bdChartData,
+                  dataKey: "actual",
+                  targetKey: "target",
+                  color: "oklch(0.78 0.17 27)",
+                  unit: "%",
+                },
+                {
+                  title: "MTTR (Mean Time to Repair)",
+                  data: mttrChartData,
+                  dataKey: "actual",
+                  targetKey: "target",
+                  color: "oklch(0.70 0.13 245)",
+                  unit: "h",
+                },
+                {
+                  title: "MTBF (Mean Time Between Failures)",
+                  data: mtbfChartData,
+                  dataKey: "actual",
+                  targetKey: "target",
+                  color: "oklch(0.75 0.13 145)",
+                  unit: "h",
+                },
+                {
+                  title: "Uptime %",
+                  data: uptimeChartData,
+                  dataKey: "actual",
+                  targetKey: "target",
+                  color: "oklch(0.80 0.180 55)",
+                  unit: "%",
+                },
+              ].map((chart) => (
+                <div key={chart.title} className="industrial-card p-4">
+                  <div className="flex items-center justify-between mb-3">
+                    <h3
+                      className="text-xs font-semibold"
+                      style={{ color: "oklch(0.75 0.008 260)" }}
                     >
-                      {item.label}
-                    </div>
-                    <div
-                      className="text-2xl font-bold"
-                      style={{
-                        color: item.color,
-                        fontFamily: "BricolageGrotesque, sans-serif",
-                      }}
-                    >
-                      {item.value}
-                    </div>
+                      {chart.title}
+                    </h3>
+                    <Target
+                      className="w-4 h-4"
+                      style={{ color: "oklch(0.55 0.010 260)" }}
+                    />
                   </div>
-                ))}
-              </div>
-              {breakdownRecords.filter((r) => r.status === "approved-breakdown")
-                .length > 0 ? (
-                <div className="industrial-card p-5">
-                  <h3
-                    className="text-sm font-semibold mb-3"
-                    style={{ color: "oklch(0.75 0.008 260)" }}
-                  >
-                    Breakdowns per Machine
-                  </h3>
-                  <ResponsiveContainer width="100%" height={180}>
-                    <BarChart
-                      data={(() => {
-                        const counts: Record<string, number> = {};
-                        for (const r of breakdownRecords.filter(
-                          (r) => r.status === "approved-breakdown",
-                        )) {
-                          counts[r.machineName] =
-                            (counts[r.machineName] || 0) + 1;
-                        }
-                        return Object.entries(counts).map(([name, count]) => ({
-                          name,
-                          count,
-                        }));
-                      })()}
-                      margin={{ top: 4, right: 8, left: -16, bottom: 0 }}
+                  <ResponsiveContainer width="100%" height={160}>
+                    <ComposedChart
+                      data={chart.data}
+                      margin={{ top: 4, right: 8, left: -10, bottom: 0 }}
                     >
                       <CartesianGrid
                         strokeDasharray="3 3"
-                        stroke="oklch(0.34 0.030 252 / 0.6)"
+                        stroke="oklch(0.34 0.030 252 / 0.4)"
                       />
                       <XAxis
-                        dataKey="name"
-                        tick={{ fill: "oklch(0.68 0.010 260)", fontSize: 11 }}
+                        dataKey="section"
+                        tick={{ fill: "oklch(0.55 0.010 260)", fontSize: 10 }}
                         axisLine={false}
                         tickLine={false}
                       />
                       <YAxis
-                        tick={{ fill: "oklch(0.68 0.010 260)", fontSize: 11 }}
+                        tick={{ fill: "oklch(0.55 0.010 260)", fontSize: 10 }}
                         axisLine={false}
                         tickLine={false}
                       />
                       <Tooltip content={<CustomTooltip />} />
                       <Bar
-                        dataKey="count"
-                        name="Breakdowns"
-                        fill="oklch(0.62 0.220 25)"
+                        dataKey="actual"
+                        name="Actual"
+                        fill={chart.color}
                         radius={[3, 3, 0, 0]}
+                        opacity={0.85}
                       />
-                    </BarChart>
+                      <Line
+                        type="monotone"
+                        dataKey="target"
+                        name="Target"
+                        stroke="oklch(0.80 0.180 55)"
+                        strokeWidth={2}
+                        strokeDasharray="5 3"
+                        dot={{ fill: "oklch(0.80 0.180 55)", r: 4 }}
+                      />
+                    </ComposedChart>
                   </ResponsiveContainer>
                 </div>
-              ) : (
-                <div className="industrial-card p-8 text-center">
-                  <Wrench
-                    className="w-8 h-8 mx-auto mb-2"
-                    style={{ color: "oklch(0.45 0.010 260)" }}
-                  />
-                  <p
-                    className="text-sm"
-                    style={{ color: "oklch(0.68 0.010 260)" }}
-                  >
-                    No approved breakdown records yet.
-                  </p>
-                </div>
-              )}
-            </motion.div>
-          )}
+              ))}
+            </div>
+          </section>
 
-          {/* Today's PM Plan */}
-          <motion.div
-            initial={{ opacity: 0, y: 20 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ delay: 0.45, duration: 0.5 }}
-          >
+          {/* ===== SECTION 3: PLANNER ===== */}
+          <section data-ocid="dashboard.section">
+            <SectionHeader icon={ClipboardCheck} title="Planner">
+              <Button
+                size="sm"
+                data-ocid="planner.open_modal_button"
+                onClick={() => navigate("task-list")}
+                style={{
+                  background: "oklch(0.70 0.188 55 / 0.18)",
+                  border: "1px solid oklch(0.70 0.188 55 / 0.4)",
+                  color: "oklch(0.80 0.180 55)",
+                  fontSize: "12px",
+                }}
+              >
+                Open Task List
+              </Button>
+            </SectionHeader>
+
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+              <KPICard
+                title="Tasks Pending"
+                value={tasksPending}
+                subtitle="Not started / In process / Hold"
+                icon={Clock}
+                colorClass="kpi-orange"
+                index={0}
+              />
+              <KPICard
+                title="Tasks Completed"
+                value={tasksCompleted}
+                subtitle="Finished tasks"
+                icon={CheckCircle2}
+                colorClass="kpi-green"
+                index={1}
+              />
+              <KPICard
+                title="High Priority"
+                value={tasksHighPriority}
+                subtitle="Active high priority"
+                icon={AlertTriangle}
+                colorClass="kpi-steel-blue"
+                index={2}
+              />
+            </div>
+
+            {/* Mini task list preview */}
+            {taskRecords.length > 0 && (
+              <div className="industrial-card p-4 mt-4">
+                <h3
+                  className="text-xs font-semibold mb-3 uppercase tracking-wider"
+                  style={{ color: "oklch(0.55 0.010 260)" }}
+                >
+                  Recent Tasks
+                </h3>
+                <div className="space-y-2">
+                  {taskRecords
+                    .filter(
+                      (t) =>
+                        user?.role === "admin" ||
+                        t.assignedTo === user?.username,
+                    )
+                    .slice(0, 4)
+                    .map((task, idx) => {
+                      const statusColors: Record<string, string> = {
+                        complete: "oklch(0.75 0.13 145)",
+                        "in-process": "oklch(0.70 0.13 245)",
+                        hold: "oklch(0.82 0.14 55)",
+                        canceled: "oklch(0.78 0.17 27)",
+                        "not-started": "oklch(0.55 0.010 260)",
+                      };
+                      const priorityColors: Record<string, string> = {
+                        high: "oklch(0.78 0.17 27)",
+                        medium: "oklch(0.82 0.14 55)",
+                        low: "oklch(0.75 0.13 145)",
+                      };
+                      return (
+                        <div
+                          key={task.id}
+                          data-ocid={`planner.item.${idx + 1}`}
+                          className="flex items-center justify-between text-sm py-1.5 border-b last:border-b-0"
+                          style={{ borderColor: "oklch(0.28 0.020 252)" }}
+                        >
+                          <div className="flex items-center gap-2">
+                            <span
+                              className="w-1.5 h-1.5 rounded-full"
+                              style={{
+                                background: priorityColors[task.priority],
+                              }}
+                            />
+                            <span className="font-medium text-xs">
+                              {task.title}
+                            </span>
+                          </div>
+                          <div className="flex items-center gap-2">
+                            <span
+                              className="text-xs"
+                              style={{ color: "oklch(0.55 0.010 260)" }}
+                            >
+                              {task.assignedTo}
+                            </span>
+                            <span
+                              className="text-xs font-semibold"
+                              style={{
+                                color:
+                                  statusColors[task.status] ??
+                                  "oklch(0.68 0.010 260)",
+                              }}
+                            >
+                              {task.status === "not-started"
+                                ? "Not Started"
+                                : task.status === "in-process"
+                                  ? "In Process"
+                                  : task.status.charAt(0).toUpperCase() +
+                                    task.status.slice(1)}
+                            </span>
+                          </div>
+                        </div>
+                      );
+                    })}
+                </div>
+              </div>
+            )}
+          </section>
+
+          {/* ===== SECTION 4: QUICK ACTIONS ===== */}
+          <section data-ocid="dashboard.section">
+            <SectionHeader icon={LayoutGrid} title="Quick Actions" />
+            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">
+              {[
+                {
+                  label: "Breakdown Slip",
+                  icon: AlertTriangle,
+                  color: "oklch(0.78 0.17 27)",
+                  bg: "oklch(0.45 0.18 27 / 0.12)",
+                  border: "oklch(0.55 0.17 27 / 0.3)",
+                  action: () => navigate("breakdown"),
+                  ocid: "quickaction.breakdown_slip.button",
+                },
+                {
+                  label: "Assign Today's Machines",
+                  icon: Cpu,
+                  color: "oklch(0.80 0.180 55)",
+                  bg: "oklch(0.70 0.188 55 / 0.12)",
+                  border: "oklch(0.70 0.188 55 / 0.3)",
+                  action: () => navigate("admin", { tab: "plans" }),
+                  ocid: "quickaction.assign_machines.button",
+                  adminOnly: true,
+                },
+                {
+                  label: "Upload Data",
+                  icon: Download,
+                  color: "oklch(0.68 0.010 260)",
+                  bg: "oklch(0.34 0.030 252 / 0.3)",
+                  border: "oklch(0.40 0.030 252)",
+                  action: () => navigate("admin", { tab: "upload" }),
+                  ocid: "quickaction.upload_data.button",
+                  adminOnly: true,
+                },
+                {
+                  label: "Breakdown Record",
+                  icon: Shield,
+                  color: "oklch(0.70 0.13 245)",
+                  bg: "oklch(0.30 0.09 245 / 0.12)",
+                  border: "oklch(0.44 0.13 245 / 0.3)",
+                  action: () => navigate("breakdown-panel"),
+                  ocid: "quickaction.breakdown_record.button",
+                },
+                {
+                  label: "CAPA",
+                  icon: Wrench,
+                  color: "oklch(0.82 0.14 55)",
+                  bg: "oklch(0.50 0.16 55 / 0.12)",
+                  border: "oklch(0.55 0.14 55 / 0.3)",
+                  action: () => navigate("capa"),
+                  ocid: "quickaction.capa.button",
+                },
+                {
+                  label: "History Card",
+                  icon: Activity,
+                  color: "oklch(0.75 0.13 145)",
+                  bg: "oklch(0.45 0.12 145 / 0.12)",
+                  border: "oklch(0.52 0.12 145 / 0.3)",
+                  action: () => navigate("history"),
+                  ocid: "quickaction.history_card.button",
+                },
+                {
+                  label: "Task List",
+                  icon: ClipboardCheck,
+                  color: "oklch(0.70 0.13 245)",
+                  bg: "oklch(0.30 0.09 245 / 0.12)",
+                  border: "oklch(0.44 0.13 245 / 0.3)",
+                  action: () => navigate("task-list"),
+                  ocid: "quickaction.task_list.button",
+                },
+              ]
+                .filter((item) => !item.adminOnly || user?.role === "admin")
+                .map((item) => (
+                  <motion.button
+                    key={item.label}
+                    type="button"
+                    whileHover={{ scale: 1.03, translateY: -2 }}
+                    whileTap={{ scale: 0.97 }}
+                    onClick={item.action}
+                    className="industrial-card p-4 text-left flex items-center gap-3 cursor-pointer"
+                    style={{
+                      border: `1px solid ${item.border}`,
+                      background: item.bg,
+                    }}
+                    data-ocid={item.ocid}
+                  >
+                    <div
+                      className="p-2 rounded-lg shrink-0"
+                      style={{
+                        background: item.bg,
+                        border: `1px solid ${item.border}`,
+                      }}
+                    >
+                      <item.icon
+                        className="w-4 h-4"
+                        style={{ color: item.color }}
+                      />
+                    </div>
+                    <span
+                      className="text-sm font-semibold"
+                      style={{ color: "oklch(0.85 0.008 260)" }}
+                    >
+                      {item.label}
+                    </span>
+                  </motion.button>
+                ))}
+            </div>
+          </section>
+
+          {/* Today's PM Schedule (for operator) */}
+          <section data-ocid="dashboard.section">
             <div className="flex items-center justify-between mb-4">
-              <div>
+              <div className="flex items-center gap-2">
+                <div
+                  className="p-1.5 rounded-lg"
+                  style={{
+                    background: "oklch(0.70 0.188 55 / 0.12)",
+                    border: "1px solid oklch(0.70 0.188 55 / 0.3)",
+                  }}
+                >
+                  <Cpu
+                    className="w-4 h-4"
+                    style={{ color: "oklch(0.80 0.180 55)" }}
+                  />
+                </div>
                 <h2
                   className="text-lg font-bold"
                   style={{ fontFamily: "BricolageGrotesque, sans-serif" }}
                 >
                   Today's Maintenance Schedule
                 </h2>
-                <p
-                  className="text-xs mt-0.5"
-                  style={{ color: "oklch(0.68 0.010 260)" }}
-                >
-                  {completedCount} of {todayMachines.length} completed • Click a
-                  machine to open checklist
-                </p>
-              </div>
-              <div className="flex items-center gap-2">
-                <Button
-                  data-ocid="dashboard.download_button"
-                  size="sm"
-                  onClick={handleDownloadReport}
-                  className="flex items-center gap-1.5"
-                  style={{
-                    background: "oklch(0.70 0.188 55 / 0.18)",
-                    border: "1px solid oklch(0.70 0.188 55 / 0.4)",
-                    color: "oklch(0.80 0.180 55)",
-                  }}
-                >
-                  <Download className="w-3.5 h-3.5" />
-                  Download Report
-                </Button>
-                {user?.role === "admin" && (
-                  <Button
-                    data-ocid="dashboard.secondary_button"
-                    size="sm"
-                    variant="outline"
-                    onClick={() => navigate("admin")}
-                    style={{
-                      borderColor: "oklch(0.34 0.030 252)",
-                      color: "oklch(0.68 0.010 260)",
-                    }}
-                  >
-                    Manage Master Data
-                  </Button>
-                )}
               </div>
             </div>
-
-            {todayMachines.length === 0 ? (
+            {prioritizedMachineIds.length === 0 && user?.role !== "admin" ? (
               <div
                 data-ocid="schedule.empty_state"
-                className="industrial-card p-10 text-center"
+                className="industrial-card p-8 text-center"
               >
                 <CheckCircle2
                   className="w-10 h-10 mx-auto mb-3"
                   style={{ color: "oklch(0.60 0.155 145)" }}
                 />
-                <p className="font-medium">
-                  No machines scheduled for this month.
-                </p>
+                <p className="font-medium">No machines assigned for today.</p>
                 <p
                   className="text-sm mt-1"
                   style={{ color: "oklch(0.68 0.010 260)" }}
                 >
-                  Upload a PM plan in the Admin Panel to get started.
+                  Admin will assign priority machines for today's plan.
                 </p>
               </div>
             ) : (
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-                {sortedTodayMachines.map((machine, idx) => {
+                {(user?.role === "admin"
+                  ? todayMachines
+                  : todayMachines.filter((m) =>
+                      prioritizedMachineIds.includes(m.id),
+                    )
+                ).map((machine, idx) => {
                   const completed = isMachineCompleted(machine.id);
-                  const todayStartMs = (() => {
-                    const d = new Date();
-                    d.setHours(0, 0, 0, 0);
-                    return d.getTime();
-                  })();
-                  const isPendingApproval =
-                    !completed &&
-                    pmRecords.some(
-                      (r) =>
-                        r.machineId === machine.id &&
-                        r.status === "pending-approval" &&
-                        Number(r.completedDate) >= todayStartMs,
-                    );
+                  const isPriority = prioritizedMachineIds.includes(machine.id);
                   return (
                     <motion.button
                       key={machine.id}
@@ -979,1140 +1366,195 @@ export default function DashboardPage() {
                       type="button"
                       initial={{ opacity: 0, scale: 0.96 }}
                       animate={{ opacity: 1, scale: 1 }}
-                      transition={{ delay: 0.5 + idx * 0.06 }}
+                      transition={{ delay: 0.3 + idx * 0.05 }}
                       whileHover={{ scale: 1.02, translateY: -2 }}
                       whileTap={{ scale: 0.98 }}
                       onClick={() => handleMachineClick(machine.id)}
-                      className="industrial-card p-4 text-left w-full group cursor-pointer transition-shadow"
-                      style={{
-                        outline: completed
-                          ? "1px solid oklch(0.52 0.120 145 / 0.5)"
-                          : isPendingApproval
-                            ? "1px solid oklch(0.70 0.15 60 / 0.5)"
-                            : undefined,
-                      }}
+                      className="industrial-card p-4 text-left w-full"
                     >
-                      <div className="flex items-start justify-between mb-3">
-                        <div className="flex items-center gap-2.5">
+                      <div className="flex items-start justify-between mb-2">
+                        <div className="flex items-center gap-2">
                           <div
-                            className="w-9 h-9 rounded-lg flex items-center justify-center text-sm font-bold"
+                            className="w-8 h-8 rounded-lg flex items-center justify-center text-xs font-bold"
                             style={{
                               background: completed
                                 ? "oklch(0.45 0.120 145 / 0.25)"
-                                : isPendingApproval
-                                  ? "oklch(0.55 0.15 60 / 0.25)"
-                                  : "oklch(0.70 0.188 55 / 0.15)",
+                                : "oklch(0.70 0.188 55 / 0.15)",
                               color: completed
                                 ? "oklch(0.75 0.130 145)"
-                                : isPendingApproval
-                                  ? "oklch(0.82 0.16 60)"
-                                  : "oklch(0.80 0.180 55)",
-                              border: `1px solid ${completed ? "oklch(0.52 0.120 145 / 0.4)" : isPendingApproval ? "oklch(0.70 0.15 60 / 0.4)" : "oklch(0.70 0.188 55 / 0.3)"}`,
+                                : "oklch(0.80 0.180 55)",
+                              border: `1px solid ${completed ? "oklch(0.52 0.120 145 / 0.4)" : "oklch(0.70 0.188 55 / 0.3)"}`,
                             }}
                           >
                             {machine.id.slice(0, 2)}
                           </div>
                           <div>
-                            <div className="flex items-center gap-1.5">
-                              <div className="text-sm font-semibold leading-tight">
-                                {machine.name}
-                              </div>
-                              {prioritizedMachineIds.includes(machine.id) && (
-                                <span
-                                  className="text-xs font-bold px-1.5 py-0.5 rounded-full flex items-center gap-0.5"
-                                  style={{
-                                    background: "oklch(0.65 0.18 80 / 0.18)",
-                                    color: "oklch(0.82 0.18 80)",
-                                    border:
-                                      "1px solid oklch(0.65 0.18 80 / 0.35)",
-                                  }}
-                                >
-                                  ⭐ Priority
-                                </span>
-                              )}
+                            <div className="text-sm font-semibold">
+                              {machine.name}
                             </div>
                             <div
                               className="text-xs"
-                              style={{ color: "oklch(0.68 0.010 260)" }}
+                              style={{ color: "oklch(0.55 0.010 260)" }}
                             >
-                              {machine.id}
+                              {machine.department}
                             </div>
                           </div>
                         </div>
                         <span
-                          className={`text-xs font-semibold px-2 py-0.5 rounded-full ${completed ? "status-completed" : !isPendingApproval ? "status-pending" : ""}`}
-                          style={
-                            isPendingApproval && !completed
-                              ? {
-                                  background: "oklch(0.55 0.15 60 / 0.18)",
-                                  color: "oklch(0.82 0.16 60)",
-                                  border: "1px solid oklch(0.70 0.15 60 / 0.4)",
-                                }
-                              : undefined
-                          }
+                          className="text-xs font-semibold px-2 py-0.5 rounded-full"
+                          style={{
+                            background: completed
+                              ? "oklch(0.45 0.12 145 / 0.2)"
+                              : "oklch(0.5 0.16 55 / 0.2)",
+                            color: completed
+                              ? "oklch(0.75 0.13 145)"
+                              : "oklch(0.8 0.14 55)",
+                            border: `1px solid ${completed ? "oklch(0.52 0.12 145 / 0.5)" : "oklch(0.55 0.14 55 / 0.5)"}`,
+                          }}
                         >
-                          {completed
-                            ? "Done"
-                            : isPendingApproval
-                              ? "Waiting"
-                              : "Pending"}
+                          {completed ? "Done" : "Pending"}
                         </span>
                       </div>
-                      <div
-                        className="text-xs space-y-1"
-                        style={{ color: "oklch(0.68 0.010 260)" }}
-                      >
-                        <div className="flex items-center gap-1.5">
-                          <span
-                            className="w-1.5 h-1.5 rounded-full"
-                            style={{ background: "oklch(0.50 0.065 232)" }}
-                          />
-                          {machine.department}
-                        </div>
-                        <div className="flex items-center gap-1.5">
-                          <span
-                            className="w-1.5 h-1.5 rounded-full"
-                            style={{ background: "oklch(0.68 0.010 260)" }}
-                          />
-                          {machine.location}
-                        </div>
-                      </div>
-                      <div className="mt-3 flex items-center justify-between">
+                      {isPriority && (
                         <span
-                          className="text-xs"
-                          style={{ color: "oklch(0.60 0.065 232)" }}
+                          className="text-xs font-bold px-1.5 py-0.5 rounded-full"
+                          style={{
+                            background: "oklch(0.65 0.18 80 / 0.18)",
+                            color: "oklch(0.82 0.18 80)",
+                            border: "1px solid oklch(0.65 0.18 80 / 0.35)",
+                          }}
                         >
-                          {machine.machineType}
+                          ⭐ Priority
                         </span>
-                        <span
-                          className="flex items-center gap-1 text-xs font-medium group-hover:translate-x-0.5 transition-transform"
-                          style={{ color: "oklch(0.80 0.180 55)" }}
-                        >
-                          {completed ? "View Record" : "Start PM"}
-                          <ChevronRight className="w-3.5 h-3.5" />
-                        </span>
-                      </div>
+                      )}
                     </motion.button>
                   );
                 })}
               </div>
             )}
-          </motion.div>
-          {/* System Status */}
-          <motion.div
-            initial={{ opacity: 0, y: 20 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ delay: 0.55, duration: 0.5 }}
-            className="mt-6"
-          >
-            <div className="flex items-center gap-2 mb-3">
-              <Server
-                className="w-4 h-4"
-                style={{ color: "oklch(0.80 0.180 55)" }}
-              />
-              <h2
-                className="text-base font-semibold"
-                style={{ fontFamily: "BricolageGrotesque, sans-serif" }}
-              >
-                System Status
-              </h2>
-            </div>
-            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-              {[
-                {
-                  label: "Total Machines",
-                  value: machines.length,
-                  color: "oklch(0.50 0.065 232)",
-                  icon: <Cpu className="w-4 h-4" />,
-                },
-                {
-                  label: "PM Records Today",
-                  value: pmRecordsToday,
-                  color: "oklch(0.60 0.155 145)",
-                  icon: <CheckCircle2 className="w-4 h-4" />,
-                },
-                {
-                  label: "Pending This Month",
-                  value: pendingThisMonth,
-                  color: "oklch(0.75 0.150 55)",
-                  icon: <Clock className="w-4 h-4" />,
-                },
-                {
-                  label: "System Health",
-                  value: "ONLINE",
-                  color: "oklch(0.60 0.155 145)",
-                  icon: <Wifi className="w-4 h-4" />,
-                },
-              ].map((item, idx) => (
-                <motion.div
-                  key={item.label}
-                  initial={{ opacity: 0, scale: 0.95 }}
-                  animate={{ opacity: 1, scale: 1 }}
-                  transition={{ delay: 0.6 + idx * 0.06 }}
-                  data-ocid={`system.status.${idx + 1}`}
-                  className="industrial-card p-3 flex items-center gap-3"
-                >
-                  <div
-                    className="p-2 rounded-lg shrink-0"
-                    style={{
-                      background: `${item.color} / 0.15`,
-                      color: item.color,
-                    }}
-                  >
-                    {item.icon}
-                  </div>
-                  <div>
-                    <div
-                      className="text-xs mb-0.5"
-                      style={{ color: "oklch(0.68 0.010 260)" }}
-                    >
-                      {item.label}
-                    </div>
-                    <div
-                      className="text-lg font-bold leading-tight"
-                      style={{
-                        color: item.color,
-                        fontFamily: "BricolageGrotesque, sans-serif",
-                      }}
-                    >
-                      {item.value}
-                    </div>
-                  </div>
-                </motion.div>
-              ))}
-            </div>
-          </motion.div>
-
-          {/* Recent PM Activity */}
-          <motion.div
-            initial={{ opacity: 0, y: 20 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ delay: 0.65, duration: 0.5 }}
-            className="mt-6 mb-4"
-          >
-            <div className="flex items-center gap-2 mb-3">
-              <Activity
-                className="w-4 h-4"
-                style={{ color: "oklch(0.80 0.180 55)" }}
-              />
-              <h2
-                className="text-base font-semibold"
-                style={{ fontFamily: "BricolageGrotesque, sans-serif" }}
-              >
-                Recent PM Activity
-              </h2>
-            </div>
-            {recentActivity.length === 0 ? (
-              <div
-                data-ocid="activity.empty_state"
-                className="industrial-card p-8 text-center"
-              >
-                <Activity
-                  className="w-8 h-8 mx-auto mb-2"
-                  style={{ color: "oklch(0.68 0.010 260)" }}
-                />
-                <p
-                  className="text-sm"
-                  style={{ color: "oklch(0.68 0.010 260)" }}
-                >
-                  No PM records yet. Complete a checklist to see activity here.
-                </p>
-              </div>
-            ) : (
-              <>
-                {/* Mobile card list */}
-                <div className="block md:hidden space-y-3">
-                  {recentActivity.map((record, idx) => {
-                    const machine = machines.find(
-                      (m) => m.id === record.machineId,
-                    );
-                    const isCompleted = record.status === "completed";
-                    const dateStr = new Date(
-                      Number(record.completedDate),
-                    ).toLocaleDateString("en-IN", {
-                      day: "2-digit",
-                      month: "short",
-                      year: "numeric",
-                      hour: "2-digit",
-                      minute: "2-digit",
-                    });
-                    return (
-                      <div
-                        key={record.id}
-                        data-ocid={`activity.item.${idx + 1}`}
-                        className="industrial-card p-4 flex items-start gap-3"
-                      >
-                        <span
-                          className="w-2.5 h-2.5 rounded-full mt-1 shrink-0"
-                          style={{
-                            background: isCompleted
-                              ? "oklch(0.60 0.155 145)"
-                              : "oklch(0.75 0.150 55)",
-                          }}
-                        />
-                        <div className="flex-1 min-w-0">
-                          <div className="flex items-start justify-between gap-2">
-                            <div className="font-medium text-sm truncate">
-                              {machine?.name ?? record.machineId}
-                            </div>
-                            <span
-                              className={`text-xs font-semibold px-2 py-0.5 rounded-full shrink-0 ${statusBadgeClass(record.status)}`}
-                            >
-                              {formatStatusLabel(record.status)}
-                            </span>
-                          </div>
-                          <div
-                            className="text-xs mt-0.5"
-                            style={{ color: "oklch(0.68 0.010 260)" }}
-                          >
-                            {record.operatorName}
-                          </div>
-                          <div
-                            className="text-xs mt-0.5"
-                            style={{ color: "oklch(0.55 0.010 260)" }}
-                          >
-                            {dateStr}
-                          </div>
-                        </div>
-                      </div>
-                    );
-                  })}
-                </div>
-                {/* Desktop table */}
-                <div className="hidden md:block industrial-card overflow-hidden">
-                  <div className="overflow-x-auto">
-                    <table className="w-full text-sm">
-                      <thead>
-                        <tr
-                          style={{
-                            borderBottom: "1px solid oklch(0.34 0.030 252)",
-                          }}
-                        >
-                          {[
-                            "Status",
-                            "Machine",
-                            "Operator",
-                            "Date & Time",
-                            "Result",
-                          ].map((h) => (
-                            <th
-                              key={h}
-                              className="text-left px-4 py-2.5 text-xs font-semibold uppercase tracking-wider"
-                              style={{ color: "oklch(0.50 0.010 260)" }}
-                            >
-                              {h}
-                            </th>
-                          ))}
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {recentActivity.map((record, idx) => {
-                          const machine = machines.find(
-                            (m) => m.id === record.machineId,
-                          );
-                          const isCompleted = record.status === "completed";
-                          const dateStr = new Date(
-                            Number(record.completedDate),
-                          ).toLocaleDateString("en-IN", {
-                            day: "2-digit",
-                            month: "short",
-                            year: "numeric",
-                            hour: "2-digit",
-                            minute: "2-digit",
-                          });
-                          return (
-                            <motion.tr
-                              key={record.id}
-                              data-ocid={`activity.item.${idx + 1}`}
-                              initial={{ opacity: 0 }}
-                              animate={{ opacity: 1 }}
-                              transition={{ delay: 0.7 + idx * 0.05 }}
-                              style={{
-                                borderBottom:
-                                  idx < recentActivity.length - 1
-                                    ? "1px solid oklch(0.28 0.020 252)"
-                                    : undefined,
-                              }}
-                              className="hover:bg-white/[0.02] transition-colors"
-                            >
-                              <td className="px-4 py-3">
-                                <span
-                                  className="w-2.5 h-2.5 rounded-full inline-block"
-                                  style={{
-                                    background: isCompleted
-                                      ? "oklch(0.60 0.155 145)"
-                                      : "oklch(0.75 0.150 55)",
-                                  }}
-                                />
-                              </td>
-                              <td className="px-4 py-3">
-                                <div className="font-medium">
-                                  {machine?.name ?? record.machineId}
-                                </div>
-                                <div
-                                  className="text-xs"
-                                  style={{ color: "oklch(0.50 0.010 260)" }}
-                                >
-                                  {record.machineId}
-                                </div>
-                              </td>
-                              <td
-                                className="px-4 py-3"
-                                style={{ color: "oklch(0.75 0.008 260)" }}
-                              >
-                                {record.operatorName}
-                              </td>
-                              <td
-                                className="px-4 py-3 text-xs"
-                                style={{ color: "oklch(0.68 0.010 260)" }}
-                              >
-                                {dateStr}
-                              </td>
-                              <td className="px-4 py-3">
-                                <span
-                                  className={`text-xs font-semibold px-2 py-0.5 rounded-full ${statusBadgeClass(record.status)}`}
-                                >
-                                  {formatStatusLabel(record.status)}
-                                </span>
-                              </td>
-                            </motion.tr>
-                          );
-                        })}
-                      </tbody>
-                    </table>
-                  </div>
-                </div>
-              </>
-            )}
-          </motion.div>
-
-          {/* Pending Approvals — Admin only */}
-          {user?.role === "admin" && (
-            <motion.div
-              initial={{ opacity: 0, y: 20 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ delay: 0.75, duration: 0.5 }}
-              className="mt-6 mb-6"
-            >
-              <div className="flex items-center gap-2 mb-3">
-                <Clock
-                  className="w-4 h-4"
-                  style={{ color: "oklch(0.80 0.188 55)" }}
-                />
-                <h2
-                  className="text-base font-semibold"
-                  style={{ fontFamily: "BricolageGrotesque, sans-serif" }}
-                >
-                  Pending Approvals
-                </h2>
-                {pendingApprovals.length > 0 && (
-                  <Badge
-                    data-ocid="approvals.panel"
-                    className="ml-1 text-xs px-2 py-0.5 font-bold"
-                    style={{
-                      background: "oklch(0.65 0.20 30 / 0.20)",
-                      color: "oklch(0.85 0.18 40)",
-                      border: "1px solid oklch(0.65 0.20 30 / 0.45)",
-                    }}
-                  >
-                    {pendingApprovals.length}
-                  </Badge>
-                )}
-              </div>
-
-              {/* PM (Preventive) Approvals */}
-              <div className="mb-2">
-                <h3
-                  className="text-sm font-semibold mb-2 flex items-center gap-2"
-                  style={{ color: "oklch(0.75 0.130 145)" }}
-                >
-                  <CheckCircle2 className="w-4 h-4" /> Preventive Approvals
-                  {pendingApprovals.length > 0 && (
-                    <span
-                      className="text-xs px-1.5 py-0.5 rounded-full font-bold"
-                      style={{
-                        background: "oklch(0.45 0.120 145 / 0.20)",
-                        color: "oklch(0.75 0.130 145)",
-                      }}
-                    >
-                      {pendingApprovals.length}
-                    </span>
-                  )}
-                </h3>
-              </div>
-              {pendingApprovals.length === 0 ? (
-                <div
-                  data-ocid="approvals.empty_state"
-                  className="industrial-card p-8 text-center"
-                >
-                  <CheckCircle2
-                    className="w-8 h-8 mx-auto mb-2"
-                    style={{ color: "oklch(0.60 0.155 145)" }}
-                  />
-                  <p
-                    className="text-sm font-medium"
-                    style={{ color: "oklch(0.68 0.010 260)" }}
-                  >
-                    All submissions reviewed
-                  </p>
-                  <p
-                    className="text-xs mt-1"
-                    style={{ color: "oklch(0.50 0.010 260)" }}
-                  >
-                    No checklists are currently waiting for approval.
-                  </p>
-                </div>
-              ) : (
-                <>
-                  {/* Mobile approval cards */}
-                  <div className="block md:hidden space-y-3">
-                    {pendingApprovals.map((record, idx) => {
-                      const machine = machines.find(
-                        (m) => m.id === record.machineId,
-                      );
-                      const dateStr = new Date(
-                        Number(record.completedDate),
-                      ).toLocaleDateString("en-IN", {
-                        day: "2-digit",
-                        month: "short",
-                        year: "numeric",
-                      });
-                      const itemCount = Array.isArray(record.checklistResults)
-                        ? record.checklistResults.length
-                        : 0;
-                      return (
-                        <div
-                          key={record.id}
-                          data-ocid={`approvals.item.${idx + 1}`}
-                          className="industrial-card p-4"
-                        >
-                          <div className="flex items-start justify-between gap-2 mb-2">
-                            <div>
-                              <div className="font-medium text-sm">
-                                {machine?.name ?? record.machineId}
-                              </div>
-                              <div
-                                className="text-xs"
-                                style={{ color: "oklch(0.68 0.010 260)" }}
-                              >
-                                {record.operatorName} · {dateStr} · {itemCount}{" "}
-                                items
-                              </div>
-                            </div>
-                          </div>
-                          <div className="flex gap-2 mt-3">
-                            <button
-                              type="button"
-                              data-ocid={`approvals.confirm_button.${idx + 1}`}
-                              onClick={() => {
-                                approveRecord(record.id);
-                                toast.success(
-                                  `✅ ${machine?.name ?? record.machineId} approved!`,
-                                );
-                              }}
-                              className="flex-1 flex items-center justify-center gap-1 py-2 rounded-lg text-xs font-semibold"
-                              style={{
-                                background: "oklch(0.45 0.120 145 / 0.22)",
-                                color: "oklch(0.75 0.130 145)",
-                                border: "1px solid oklch(0.52 0.120 145 / 0.4)",
-                              }}
-                            >
-                              <CheckCircle2 className="w-3.5 h-3.5" /> Approve
-                            </button>
-                            <button
-                              type="button"
-                              data-ocid={`approvals.delete_button.${idx + 1}`}
-                              onClick={() => {
-                                rejectRecord(record.id);
-                                toast.error(
-                                  `❌ ${machine?.name ?? record.machineId} rejected.`,
-                                );
-                              }}
-                              className="flex-1 flex items-center justify-center gap-1 py-2 rounded-lg text-xs font-semibold"
-                              style={{
-                                background: "oklch(0.40 0.150 25 / 0.20)",
-                                color: "oklch(0.72 0.170 25)",
-                                border: "1px solid oklch(0.55 0.150 25 / 0.4)",
-                              }}
-                            >
-                              <XCircle className="w-3.5 h-3.5" /> Reject
-                            </button>
-                          </div>
-                        </div>
-                      );
-                    })}
-                  </div>
-                  {/* Desktop table */}
-                  <div className="hidden md:block industrial-card overflow-hidden">
-                    <div className="overflow-x-auto">
-                      <table className="w-full text-sm">
-                        <thead>
-                          <tr
-                            style={{
-                              borderBottom: "1px solid oklch(0.34 0.030 252)",
-                            }}
-                          >
-                            {[
-                              "Machine",
-                              "Operator",
-                              "Submitted",
-                              "Items",
-                              "Actions",
-                            ].map((h) => (
-                              <th
-                                key={h}
-                                className="text-left px-4 py-2.5 text-xs font-semibold uppercase tracking-wider"
-                                style={{ color: "oklch(0.50 0.010 260)" }}
-                              >
-                                {h}
-                              </th>
-                            ))}
-                          </tr>
-                        </thead>
-                        <tbody>
-                          {pendingApprovals.map((record, idx) => {
-                            const machine = machines.find(
-                              (m) => m.id === record.machineId,
-                            );
-                            const dateStr = new Date(
-                              Number(record.completedDate),
-                            ).toLocaleDateString("en-IN", {
-                              day: "2-digit",
-                              month: "short",
-                              year: "numeric",
-                              hour: "2-digit",
-                              minute: "2-digit",
-                            });
-                            const itemCount = Array.isArray(
-                              record.checklistResults,
-                            )
-                              ? record.checklistResults.length
-                              : 0;
-                            return (
-                              <motion.tr
-                                key={record.id}
-                                data-ocid={`approvals.item.${idx + 1}`}
-                                initial={{ opacity: 0 }}
-                                animate={{ opacity: 1 }}
-                                transition={{ delay: 0.8 + idx * 0.05 }}
-                                style={{
-                                  borderBottom:
-                                    idx < pendingApprovals.length - 1
-                                      ? "1px solid oklch(0.28 0.020 252)"
-                                      : undefined,
-                                }}
-                                className="hover:bg-white/[0.02] transition-colors"
-                              >
-                                <td className="px-4 py-3">
-                                  <div className="font-medium">
-                                    {machine?.name ?? record.machineId}
-                                  </div>
-                                  <div
-                                    className="text-xs"
-                                    style={{ color: "oklch(0.50 0.010 260)" }}
-                                  >
-                                    {record.machineId}
-                                  </div>
-                                </td>
-                                <td
-                                  className="px-4 py-3"
-                                  style={{ color: "oklch(0.75 0.008 260)" }}
-                                >
-                                  {record.operatorName}
-                                </td>
-                                <td
-                                  className="px-4 py-3 text-xs"
-                                  style={{ color: "oklch(0.68 0.010 260)" }}
-                                >
-                                  {dateStr}
-                                </td>
-                                <td
-                                  className="px-4 py-3 text-xs"
-                                  style={{ color: "oklch(0.68 0.010 260)" }}
-                                >
-                                  {itemCount} items
-                                </td>
-                                <td className="px-4 py-3">
-                                  <div className="flex items-center gap-2">
-                                    <button
-                                      type="button"
-                                      data-ocid={`approvals.confirm_button.${idx + 1}`}
-                                      onClick={() => {
-                                        approveRecord(record.id);
-                                        toast.success(
-                                          `✅ ${machine?.name ?? record.machineId} approved!`,
-                                        );
-                                      }}
-                                      className="flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors hover:opacity-80"
-                                      style={{
-                                        background:
-                                          "oklch(0.45 0.120 145 / 0.22)",
-                                        color: "oklch(0.75 0.130 145)",
-                                        border:
-                                          "1px solid oklch(0.52 0.120 145 / 0.4)",
-                                      }}
-                                    >
-                                      <CheckCircle2 className="w-3.5 h-3.5" />
-                                      Approve
-                                    </button>
-                                    <button
-                                      type="button"
-                                      data-ocid={`approvals.delete_button.${idx + 1}`}
-                                      onClick={() => {
-                                        rejectRecord(record.id);
-                                        toast.error(
-                                          `❌ ${machine?.name ?? record.machineId} rejected.`,
-                                        );
-                                      }}
-                                      className="flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors hover:opacity-80"
-                                      style={{
-                                        background:
-                                          "oklch(0.40 0.150 25 / 0.20)",
-                                        color: "oklch(0.72 0.170 25)",
-                                        border:
-                                          "1px solid oklch(0.55 0.150 25 / 0.4)",
-                                      }}
-                                    >
-                                      <XCircle className="w-3.5 h-3.5" />
-                                      Reject
-                                    </button>
-                                  </div>
-                                </td>
-                              </motion.tr>
-                            );
-                          })}
-                        </tbody>
-                      </table>
-                    </div>
-                  </div>
-                </>
-              )}
-
-              {/* Breakdown Approvals */}
-              {pendingBreakdownApprovals.length > 0 && (
-                <div className="mt-6">
-                  <h3
-                    className="text-sm font-semibold mb-3 flex items-center gap-2"
-                    style={{ color: "oklch(0.72 0.170 27)" }}
-                  >
-                    <AlertTriangle className="w-4 h-4" /> Breakdown Approvals
-                    <span
-                      className="text-xs px-1.5 py-0.5 rounded-full font-bold"
-                      style={{
-                        background: "oklch(0.62 0.220 25 / 0.20)",
-                        color: "oklch(0.75 0.200 25)",
-                      }}
-                    >
-                      {pendingBreakdownApprovals.length}
-                    </span>
-                  </h3>
-                  <div className="industrial-card overflow-hidden">
-                    <div className="overflow-x-auto">
-                      <table className="w-full text-sm">
-                        <thead>
-                          <tr
-                            style={{
-                              borderBottom: "1px solid oklch(0.34 0.030 252)",
-                            }}
-                          >
-                            {[
-                              "Machine",
-                              "Date",
-                              "Duration",
-                              "Fault",
-                              "Problem",
-                              "Operator",
-                              "Actions",
-                            ].map((h) => (
-                              <th
-                                key={h}
-                                className="text-left px-4 py-2.5 text-xs font-semibold uppercase tracking-wider"
-                                style={{ color: "oklch(0.50 0.010 260)" }}
-                              >
-                                {h}
-                              </th>
-                            ))}
-                          </tr>
-                        </thead>
-                        <tbody>
-                          {pendingBreakdownApprovals.map((record, idx) => (
-                            <tr
-                              key={record.id}
-                              data-ocid={`bd_approvals.item.${idx + 1}`}
-                              style={{
-                                borderBottom:
-                                  idx < pendingBreakdownApprovals.length - 1
-                                    ? "1px solid oklch(0.28 0.020 252)"
-                                    : undefined,
-                              }}
-                              className="hover:bg-white/[0.02] transition-colors"
-                            >
-                              <td
-                                className="px-4 py-3 font-medium"
-                                style={{ color: "oklch(0.80 0.180 55)" }}
-                              >
-                                {record.machineName}
-                              </td>
-                              <td
-                                className="px-4 py-3 text-xs"
-                                style={{ color: "oklch(0.68 0.010 260)" }}
-                              >
-                                {record.date}
-                              </td>
-                              <td
-                                className="px-4 py-3 text-sm"
-                                style={{
-                                  color:
-                                    record.durationMinutes > 60
-                                      ? "oklch(0.75 0.200 25)"
-                                      : "inherit",
-                                }}
-                              >
-                                {record.durationMinutes} min
-                              </td>
-                              <td className="px-4 py-3 text-xs">
-                                {record.faultType}
-                              </td>
-                              <td
-                                className="px-4 py-3 text-xs max-w-[150px] truncate"
-                                style={{ color: "oklch(0.75 0.008 260)" }}
-                              >
-                                {record.problemDescription}
-                              </td>
-                              <td className="px-4 py-3 text-xs">
-                                {record.operatorName}
-                              </td>
-                              <td className="px-4 py-3">
-                                <div className="flex items-center gap-2">
-                                  <button
-                                    type="button"
-                                    data-ocid={`bd_approvals.confirm_button.${idx + 1}`}
-                                    onClick={() => {
-                                      navigate("breakdown-panel");
-                                      toast.success(
-                                        "Opening Breakdown Panel to approve",
-                                      );
-                                    }}
-                                    className="flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs font-semibold hover:opacity-80"
-                                    style={{
-                                      background:
-                                        "oklch(0.45 0.120 145 / 0.22)",
-                                      color: "oklch(0.75 0.130 145)",
-                                      border:
-                                        "1px solid oklch(0.52 0.120 145 / 0.4)",
-                                    }}
-                                  >
-                                    <CheckCircle2 className="w-3.5 h-3.5" />{" "}
-                                    Review
-                                  </button>
-                                </div>
-                              </td>
-                            </tr>
-                          ))}
-                        </tbody>
-                      </table>
-                    </div>
-                  </div>
-                </div>
-              )}
-            </motion.div>
-          )}
-
-          {/* Breakdown Analytics */}
-          {breakdownRecords.length > 0 &&
-            (() => {
-              const now = Date.now();
-              const thirtyDaysAgo = now - 30 * 24 * 60 * 60 * 1000;
-              const recentBds = breakdownRecords.filter(
-                (r) =>
-                  r.submittedAt >= thirtyDaysAgo &&
-                  (r.status === "approved-breakdown" ||
-                    r.status === "approved-service"),
-              );
-              const monthStart = new Date();
-              monthStart.setDate(1);
-              monthStart.setHours(0, 0, 0, 0);
-              const monthBds = breakdownRecords.filter(
-                (r) =>
-                  r.submittedAt >= monthStart.getTime() &&
-                  r.status === "approved-breakdown",
-              );
-              const totalBdMinThisMonth = monthBds.reduce(
-                (s, r) => s + r.durationMinutes,
-                0,
-              );
-              const availableMinThisMonth = 30 * 8 * 60;
-              const uptimePct = Math.max(
-                0,
-                Math.round(
-                  ((availableMinThisMonth - totalBdMinThisMonth) /
-                    availableMinThisMonth) *
-                    100 *
-                    10,
-                ) / 10,
-              );
-              const mttr =
-                recentBds.length > 0
-                  ? Math.round(
-                      recentBds.reduce((s, r) => s + r.durationMinutes, 0) /
-                        recentBds.length,
-                    )
-                  : 0;
-              let mtbf = 0;
-              if (recentBds.length > 1) {
-                const sorted = [...recentBds].sort(
-                  (a, b) => a.submittedAt - b.submittedAt,
-                );
-                const gaps: number[] = [];
-                for (let i = 1; i < sorted.length; i++) {
-                  gaps.push(
-                    (sorted[i].submittedAt - sorted[i - 1].submittedAt) /
-                      (1000 * 60 * 60 * 24),
-                  );
-                }
-                mtbf = Math.round(
-                  gaps.reduce((a, b) => a + b, 0) / gaps.length,
-                );
-              }
-
-              // Breakdown by machine data
-              const bdByMachine: Record<string, number> = {};
-              for (const r of recentBds) {
-                bdByMachine[r.machineName] =
-                  (bdByMachine[r.machineName] ?? 0) + 1;
-              }
-              const bdChartData = Object.entries(bdByMachine).map(
-                ([name, count]) => ({ name, count }),
-              );
-
-              const openCapas = capaRecords.filter(
-                (c) => c.status === "Open",
-              ).length;
-
-              return (
-                <motion.div
-                  initial={{ opacity: 0, y: 20 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  transition={{ delay: 0.2, duration: 0.4 }}
-                  className="mt-6 space-y-4"
-                >
-                  <div className="flex items-center gap-2">
-                    <AlertTriangle
-                      className="w-5 h-5"
-                      style={{ color: "oklch(0.75 0.200 25)" }}
-                    />
-                    <h2
-                      className="text-base font-bold"
-                      style={{ fontFamily: "BricolageGrotesque, sans-serif" }}
-                    >
-                      Breakdown Analytics
-                    </h2>
-                    <span
-                      className="text-xs"
-                      style={{ color: "oklch(0.55 0.010 260)" }}
-                    >
-                      Last 30 days
-                    </span>
-                  </div>
-
-                  {user?.role === "admin" && openCapas > 0 && (
-                    <div
-                      className="flex items-center gap-3 px-4 py-3 rounded-xl"
-                      style={{
-                        background: "oklch(0.62 0.220 25 / 0.12)",
-                        border: "1px solid oklch(0.62 0.220 25 / 0.35)",
-                      }}
-                      data-ocid="capa_warning.card"
-                    >
-                      <AlertCircle
-                        className="w-5 h-5"
-                        style={{ color: "oklch(0.80 0.200 25)" }}
-                      />
-                      <p
-                        className="text-sm font-semibold"
-                        style={{ color: "oklch(0.80 0.200 25)" }}
-                      >
-                        ⚠️ {openCapas} Open CAPA{openCapas > 1 ? "s" : ""} —
-                        Permanent actions required
-                      </p>
-                      {user?.role === "admin" && (
-                        <button
-                          type="button"
-                          onClick={() => navigate("breakdown-panel")}
-                          className="ml-auto text-xs px-3 py-1 rounded"
-                          style={{
-                            background: "oklch(0.62 0.220 25 / 0.20)",
-                            color: "oklch(0.80 0.200 25)",
-                          }}
-                        >
-                          View CAPAs
-                        </button>
-                      )}
-                    </div>
-                  )}
-
-                  <div className="grid grid-cols-1 xl:grid-cols-3 gap-5">
-                    <div className="xl:col-span-1 grid grid-cols-3 xl:grid-cols-1 gap-4">
-                      {[
-                        {
-                          label: "Uptime %",
-                          value: `${uptimePct}%`,
-                          subtitle: "This month",
-                          color: "oklch(0.75 0.130 145)",
-                        },
-                        {
-                          label: "MTTR",
-                          value: mttr > 0 ? `${mttr} min` : "N/A",
-                          subtitle: "Avg repair time",
-                          color: "oklch(0.80 0.180 55)",
-                        },
-                        {
-                          label: "MTBF",
-                          value: mtbf > 0 ? `${mtbf} days` : "N/A",
-                          subtitle: "Avg between failures",
-                          color: "oklch(0.65 0.150 232)",
-                        },
-                      ].map((kpi) => (
-                        <div key={kpi.label} className="industrial-card p-4">
-                          <p
-                            className="text-xs font-semibold uppercase tracking-widest mb-1"
-                            style={{ color: "oklch(0.68 0.010 260)" }}
-                          >
-                            {kpi.label}
-                          </p>
-                          <p
-                            className="text-3xl font-bold"
-                            style={{
-                              color: kpi.color,
-                              fontFamily: "BricolageGrotesque, sans-serif",
-                            }}
-                          >
-                            {kpi.value}
-                          </p>
-                          <p
-                            className="text-xs mt-0.5"
-                            style={{ color: "oklch(0.55 0.010 260)" }}
-                          >
-                            {kpi.subtitle}
-                          </p>
-                        </div>
-                      ))}
-                    </div>
-
-                    <div className="xl:col-span-2 industrial-card p-5">
-                      <div className="flex items-center justify-between mb-4">
-                        <div>
-                          <h3
-                            className="text-sm font-semibold"
-                            style={{
-                              fontFamily: "BricolageGrotesque, sans-serif",
-                            }}
-                          >
-                            Breakdown by Machine
-                          </h3>
-                          <p
-                            className="text-xs mt-0.5"
-                            style={{ color: "oklch(0.68 0.010 260)" }}
-                          >
-                            Last 30 days — count of approved breakdowns
-                          </p>
-                        </div>
-                        <Wrench
-                          className="w-4 h-4"
-                          style={{ color: "oklch(0.68 0.010 260)" }}
-                        />
-                      </div>
-                      {bdChartData.length === 0 ? (
-                        <div
-                          className="text-center py-10"
-                          data-ocid="bd_chart.empty_state"
-                        >
-                          <p
-                            className="text-sm"
-                            style={{ color: "oklch(0.55 0.010 260)" }}
-                          >
-                            No breakdowns in last 30 days
-                          </p>
-                        </div>
-                      ) : (
-                        <ResponsiveContainer width="100%" height={180}>
-                          <BarChart
-                            data={bdChartData}
-                            margin={{ top: 4, right: 8, left: -16, bottom: 0 }}
-                          >
-                            <CartesianGrid
-                              strokeDasharray="3 3"
-                              stroke="oklch(0.34 0.030 252 / 0.6)"
-                            />
-                            <XAxis
-                              dataKey="name"
-                              tick={{
-                                fill: "oklch(0.68 0.010 260)",
-                                fontSize: 11,
-                              }}
-                              axisLine={false}
-                              tickLine={false}
-                            />
-                            <YAxis
-                              tick={{
-                                fill: "oklch(0.68 0.010 260)",
-                                fontSize: 11,
-                              }}
-                              axisLine={false}
-                              tickLine={false}
-                            />
-                            <Tooltip
-                              contentStyle={{
-                                background: "oklch(0.22 0.022 252)",
-                                border: "1px solid oklch(0.34 0.030 252)",
-                                color: "oklch(0.88 0.010 260)",
-                                borderRadius: "8px",
-                                fontSize: "12px",
-                              }}
-                            />
-                            <Bar
-                              dataKey="count"
-                              name="Breakdowns"
-                              fill="oklch(0.55 0.200 25)"
-                              radius={[3, 3, 0, 0]}
-                            />
-                          </BarChart>
-                        </ResponsiveContainer>
-                      )}
-                    </div>
-                  </div>
-                </motion.div>
-              );
-            })()}
+          </section>
         </main>
 
         {/* Footer */}
         <footer
-          className="mt-auto border-t py-4"
+          className="py-4 text-center text-xs"
           style={{
-            background: "oklch(0.19 0.020 255)",
-            borderColor: "oklch(0.34 0.030 252)",
+            color: "oklch(0.45 0.010 260)",
+            borderTop: "1px solid oklch(0.28 0.020 252)",
           }}
         >
-          <div className="max-w-7xl mx-auto px-4 flex flex-col sm:flex-row items-center justify-between gap-2">
-            <p className="text-xs" style={{ color: "oklch(0.50 0.010 260)" }}>
-              © {new Date().getFullYear()} PM Tracker. Industrial Maintenance
-              Management.
-            </p>
-            <p className="text-xs" style={{ color: "oklch(0.50 0.010 260)" }}>
-              Built with ❤ using{" "}
-              <a
-                href={`https://caffeine.ai?utm_source=caffeine-footer&utm_medium=referral&utm_content=${encodeURIComponent(typeof window !== "undefined" ? window.location.hostname : "")}`}
-                target="_blank"
-                rel="noopener noreferrer"
-                style={{ color: "oklch(0.70 0.188 55)" }}
-              >
-                caffeine.ai
-              </a>
-            </p>
-          </div>
+          © {new Date().getFullYear()}. Built with love using{" "}
+          <a
+            href={`https://caffeine.ai?utm_source=caffeine-footer&utm_medium=referral&utm_content=${encodeURIComponent(window.location.hostname)}`}
+            target="_blank"
+            rel="noopener noreferrer"
+            style={{ color: "oklch(0.70 0.188 55)" }}
+          >
+            caffeine.ai
+          </a>
         </footer>
       </div>
+
+      {/* Set Targets Dialog */}
+      <Dialog open={showTargetDialog} onOpenChange={setShowTargetDialog}>
+        <DialogContent
+          className="max-w-lg"
+          style={{
+            background: "oklch(0.22 0.022 252)",
+            border: "1px solid oklch(0.34 0.030 252)",
+          }}
+        >
+          <DialogHeader>
+            <DialogTitle
+              style={{ fontFamily: "BricolageGrotesque, sans-serif" }}
+            >
+              Set Breakdown Targets
+            </DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4">
+            {SECTIONS.map((section) => (
+              <div
+                key={section}
+                className="rounded-xl p-4"
+                style={{
+                  background: "oklch(0.19 0.020 255)",
+                  border: "1px solid oklch(0.34 0.030 252)",
+                }}
+              >
+                <h3
+                  className="text-sm font-semibold mb-3"
+                  style={{ color: "oklch(0.80 0.180 55)" }}
+                >
+                  {section}
+                </h3>
+                <div className="grid grid-cols-2 gap-3">
+                  {[
+                    { key: "bdPct", label: "Target BD% (max)" },
+                    { key: "mttr", label: "Target MTTR (hrs, max)" },
+                    { key: "mtbf", label: "Target MTBF (hrs, min)" },
+                    { key: "uptime", label: "Target Uptime% (min)" },
+                  ].map(({ key, label }) => (
+                    <div key={key}>
+                      <Label
+                        className="text-xs font-semibold mb-1 block"
+                        style={{ color: "oklch(0.60 0.010 260)" }}
+                      >
+                        {label}
+                      </Label>
+                      <Input
+                        data-ocid="targets.input"
+                        type="number"
+                        value={
+                          targetForm[section as keyof BDTargets][
+                            key as keyof (typeof targetForm)[keyof BDTargets]
+                          ]
+                        }
+                        onChange={(e) =>
+                          setTargetForm((prev) => ({
+                            ...prev,
+                            [section]: {
+                              ...prev[section as keyof BDTargets],
+                              [key]: Number(e.target.value),
+                            },
+                          }))
+                        }
+                        style={{
+                          background: "oklch(0.165 0.022 252)",
+                          borderColor: "oklch(0.34 0.030 252)",
+                        }}
+                      />
+                    </div>
+                  ))}
+                </div>
+              </div>
+            ))}
+            <div className="flex justify-end gap-2 pt-2">
+              <Button
+                data-ocid="targets.cancel_button"
+                variant="outline"
+                onClick={() => setShowTargetDialog(false)}
+                style={{
+                  borderColor: "oklch(0.34 0.030 252)",
+                  color: "oklch(0.68 0.010 260)",
+                }}
+              >
+                Cancel
+              </Button>
+              <Button
+                data-ocid="targets.save_button"
+                onClick={handleSaveTargets}
+                style={{
+                  background: "oklch(0.70 0.188 55 / 0.18)",
+                  border: "1px solid oklch(0.70 0.188 55 / 0.4)",
+                  color: "oklch(0.80 0.180 55)",
+                }}
+              >
+                Save Targets
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
     </>
   );
 }

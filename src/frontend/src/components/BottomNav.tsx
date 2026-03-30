@@ -1,12 +1,11 @@
 import {
-  Activity,
   AlertTriangle,
   BarChart2,
+  ClipboardCheck,
   ClipboardList,
   LayoutDashboard,
   LogOut,
   Settings,
-  Wrench,
 } from "lucide-react";
 import { useApp } from "../context/AppContext";
 
@@ -45,6 +44,13 @@ export default function BottomNav() {
       action: () => navigate("analysis"),
       active: isActive(["analysis"]),
       ocid: "bottom_nav.analysis.link",
+    },
+    {
+      label: "Tasks",
+      icon: ClipboardCheck,
+      action: () => navigate("task-list"),
+      active: isActive(["task-list"]),
+      ocid: "bottom_nav.tasks.link",
     },
     ...(user.role === "admin"
       ? [

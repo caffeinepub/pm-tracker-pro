@@ -38,7 +38,6 @@ export type UserRecord = {
   role: "admin" | "operator";
 };
 
-// Extended machine with section and available working hours
 export interface MachineExtended extends Machine {
   section?: "Powder Coating" | "Machine Shop" | "Utility" | "";
   availableWorkingHours?: number;
@@ -108,6 +107,46 @@ export interface SectionHoursConfig {
   powerOff: number;
 }
 
+export interface TaskRecord {
+  id: string;
+  title: string;
+  description: string;
+  priority: "high" | "medium" | "low";
+  status: "not-started" | "in-process" | "complete" | "hold" | "canceled";
+  assignedTo: string;
+  assignedByUsername: string;
+  createdAt: number;
+  dueDate: string;
+  statusHistory: Array<{
+    status: string;
+    changedBy: string;
+    remark?: string;
+    photoFilename?: string;
+    timestamp: number;
+    requiresApproval?: boolean;
+    approved?: boolean;
+  }>;
+  lastUpdatedRemark?: string;
+  lastUpdatedPhoto?: string;
+}
+
+export interface BDTargets {
+  "Powder Coating": {
+    bdPct: number;
+    mttr: number;
+    mtbf: number;
+    uptime: number;
+  };
+  "Machine Shop": { bdPct: number; mttr: number; mtbf: number; uptime: number };
+  Utility: { bdPct: number; mttr: number; mtbf: number; uptime: number };
+}
+
+const DEFAULT_BD_TARGETS: BDTargets = {
+  "Powder Coating": { bdPct: 5, mttr: 60, mtbf: 500, uptime: 95 },
+  "Machine Shop": { bdPct: 5, mttr: 60, mtbf: 500, uptime: 95 },
+  Utility: { bdPct: 5, mttr: 60, mtbf: 500, uptime: 95 },
+};
+
 const MACHINES_KEY = "pm_tracker_machines";
 const PRIORITIZED_KEY = "pm_tracker_prioritized_machines";
 const USERS_STORAGE_KEY = "pm_tracker_users";
@@ -116,6 +155,8 @@ const HISTORY_KEY = "pm_tracker_history";
 const BREAKDOWN_KEY = "pm_tracker_breakdowns";
 const CAPA_KEY = "pm_tracker_capa";
 const SECTION_HOURS_KEY = "pm_tracker_section_hours";
+const TASKS_KEY = "pm_tracker_tasks";
+const BD_TARGETS_KEY = "pm_tracker_bd_targets";
 
 const DEFAULT_SECTION_HOURS: SectionHoursConfig[] = [
   { section: "Powder Coating", availableProductionHrs: 2000, powerOff: 0 },
@@ -216,6 +257,13 @@ type AppContextType = {
   ) => void;
   prioritizedMachineIds: string[];
   setPrioritizedMachines: (ids: string[]) => void;
+  taskRecords: TaskRecord[];
+  addTask: (task: TaskRecord) => void;
+  updateTask: (id: string, updates: Partial<TaskRecord>) => void;
+  deleteTask: (id: string) => void;
+  importTasks: (records: TaskRecord[]) => void;
+  bdTargets: BDTargets;
+  updateBDTargets: (targets: Partial<BDTargets>) => void;
 };
 
 export type PageName =
@@ -228,7 +276,8 @@ export type PageName =
   | "analysis"
   | "breakdown"
   | "capa"
-  | "history";
+  | "history"
+  | "task-list";
 
 export interface NavParams {
   machineId?: string;
@@ -293,7 +342,6 @@ export function AppProvider({ children }: { children: ReactNode }) {
     } catch {}
     return [];
   });
-
   const [sectionHoursConfigs, setSectionHoursConfigs] = useState<
     SectionHoursConfig[]
   >(() => {
@@ -303,7 +351,6 @@ export function AppProvider({ children }: { children: ReactNode }) {
     } catch {}
     return DEFAULT_SECTION_HOURS;
   });
-
   const [prioritizedMachineIds, setPrioritizedMachineIds] = useState<string[]>(
     () => {
       try {
@@ -313,6 +360,20 @@ export function AppProvider({ children }: { children: ReactNode }) {
       return [];
     },
   );
+  const [taskRecords, setTaskRecords] = useState<TaskRecord[]>(() => {
+    try {
+      const r = localStorage.getItem(TASKS_KEY);
+      if (r) return JSON.parse(r);
+    } catch {}
+    return [];
+  });
+  const [bdTargets, setBdTargets] = useState<BDTargets>(() => {
+    try {
+      const r = localStorage.getItem(BD_TARGETS_KEY);
+      if (r) return JSON.parse(r);
+    } catch {}
+    return DEFAULT_BD_TARGETS;
+  });
 
   // biome-ignore lint/correctness/useExhaustiveDependencies: intentionally only run on login
   useEffect(() => {
@@ -336,18 +397,15 @@ export function AppProvider({ children }: { children: ReactNode }) {
     if (user) localStorage.setItem(SESSION_KEY, JSON.stringify(user));
     else localStorage.removeItem(SESSION_KEY);
   }, [user]);
-
   useEffect(() => {
     localStorage.setItem(MACHINES_KEY, JSON.stringify(machines));
   }, [machines]);
-
   useEffect(() => {
     localStorage.setItem(
       PRIORITIZED_KEY,
       JSON.stringify(prioritizedMachineIds),
     );
   }, [prioritizedMachineIds]);
-
   useEffect(() => {
     localStorage.setItem(HISTORY_KEY, JSON.stringify(historyCards));
   }, [historyCards]);
@@ -363,6 +421,12 @@ export function AppProvider({ children }: { children: ReactNode }) {
       JSON.stringify(sectionHoursConfigs),
     );
   }, [sectionHoursConfigs]);
+  useEffect(() => {
+    localStorage.setItem(TASKS_KEY, JSON.stringify(taskRecords));
+  }, [taskRecords]);
+  useEffect(() => {
+    localStorage.setItem(BD_TARGETS_KEY, JSON.stringify(bdTargets));
+  }, [bdTargets]);
 
   const login = useCallback((username: string, password: string): boolean => {
     const users = loadUsers();
@@ -507,11 +571,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
         let result = [...prev];
         for (const t of templates) {
           const idx = result.findIndex((x) => x.id === t.id);
-          if (idx >= 0) {
-            result[idx] = t;
-          } else {
-            result = [...result, t];
-          }
+          if (idx >= 0) result[idx] = t;
+          else result = [...result, t];
         }
         return result;
       });
@@ -692,7 +753,6 @@ export function AppProvider({ children }: { children: ReactNode }) {
         const shouldAddHistory = autoHistory || (isBreakdown && addToHistory);
         const createCapa =
           isBreakdown && (record.durationMinutes > 60 || addToCapa);
-
         if (createCapa) {
           const capa: CAPARecord = {
             id: `capa-${Date.now()}`,
@@ -834,7 +894,6 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const importHistoryEntries = useCallback((entries: HistoryCardEntry[]) => {
     setHistoryCards((prev) => [...prev, ...entries]);
   }, []);
-
   const updateSectionHoursConfig = useCallback(
     (
       section: string,
@@ -846,9 +905,50 @@ export function AppProvider({ children }: { children: ReactNode }) {
     },
     [],
   );
-
   const setPrioritizedMachines = useCallback((ids: string[]) => {
     setPrioritizedMachineIds(ids);
+  }, []);
+
+  const addTask = useCallback((task: TaskRecord) => {
+    setTaskRecords((prev) => [...prev, task]);
+    setNotifications((prev) => [
+      {
+        id: `notif-task-${Date.now()}`,
+        message: `📋 New task assigned to ${task.assignedTo}: "${task.title}"`,
+        timestamp: Date.now(),
+        read: false,
+      },
+      ...prev,
+    ]);
+  }, []);
+
+  const updateTask = useCallback((id: string, updates: Partial<TaskRecord>) => {
+    setTaskRecords((prev) =>
+      prev.map((t) => (t.id === id ? { ...t, ...updates } : t)),
+    );
+    if (updates.status) {
+      setNotifications((prev) => [
+        {
+          id: `notif-task-upd-${Date.now()}`,
+          message: `🔄 Task status updated to "${updates.status}"`,
+          timestamp: Date.now(),
+          read: false,
+        },
+        ...prev,
+      ]);
+    }
+  }, []);
+
+  const deleteTask = useCallback((id: string) => {
+    setTaskRecords((prev) => prev.filter((t) => t.id !== id));
+  }, []);
+
+  const importTasks = useCallback((records: TaskRecord[]) => {
+    setTaskRecords((prev) => [...prev, ...records]);
+  }, []);
+
+  const updateBDTargets = useCallback((targets: Partial<BDTargets>) => {
+    setBdTargets((prev) => ({ ...prev, ...targets }));
   }, []);
 
   return (
@@ -902,6 +1002,13 @@ export function AppProvider({ children }: { children: ReactNode }) {
         updateSectionHoursConfig,
         prioritizedMachineIds,
         setPrioritizedMachines,
+        taskRecords,
+        addTask,
+        updateTask,
+        deleteTask,
+        importTasks,
+        bdTargets,
+        updateBDTargets,
       }}
     >
       {children}
