@@ -1,0 +1,180 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@font-face {
+  font-family: "BricolageGrotesque";
+  src: url("/assets/fonts/BricolageGrotesque.woff2") format("woff2");
+  font-weight: 200 800;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: "GeneralSans";
+  src: url("/assets/fonts/GeneralSans.woff2") format("woff2");
+  font-weight: 200 700;
+  font-display: swap;
+}
+
+@layer base {
+  :root {
+    --radius: 0.5rem;
+    /* Industrial dark palette — used in dark mode (app is always dark) */
+    --background: 0.165 0.022 252;
+    --foreground: 0.962 0.004 260;
+    --card: 0.22 0.022 252;
+    --card-foreground: 0.962 0.004 260;
+    --popover: 0.25 0.024 253;
+    --popover-foreground: 0.962 0.004 260;
+    --primary: 0.7 0.188 55;
+    --primary-foreground: 0.1 0.01 55;
+    --secondary: 0.28 0.028 253;
+    --secondary-foreground: 0.962 0.004 260;
+    --muted: 0.26 0.024 253;
+    --muted-foreground: 0.68 0.01 260;
+    --accent: 0.34 0.034 253;
+    --accent-foreground: 0.962 0.004 260;
+    --destructive: 0.63 0.22 27;
+    --destructive-foreground: 0.985 0 0;
+    --border: 0.34 0.03 252;
+    --input: 0.28 0.026 252;
+    --ring: 0.7 0.188 55;
+    --chart-1: 0.7 0.188 55;
+    --chart-2: 0.5 0.065 232;
+    --chart-3: 0.6 0.155 145;
+    --chart-4: 0.58 0.16 245;
+    --chart-5: 0.68 0.01 260;
+    --sidebar: 0.19 0.02 255;
+    --sidebar-foreground: 0.962 0.004 260;
+    --sidebar-primary: 0.7 0.188 55;
+    --sidebar-primary-foreground: 0.1 0.01 55;
+    --sidebar-accent: 0.28 0.028 253;
+    --sidebar-accent-foreground: 0.962 0.004 260;
+    --sidebar-border: 0.34 0.03 252;
+    --sidebar-ring: 0.7 0.188 55;
+  }
+
+  .dark {
+    --background: 0.165 0.022 252;
+    --foreground: 0.962 0.004 260;
+    --card: 0.22 0.022 252;
+    --card-foreground: 0.962 0.004 260;
+    --popover: 0.25 0.024 253;
+    --popover-foreground: 0.962 0.004 260;
+    --primary: 0.7 0.188 55;
+    --primary-foreground: 0.1 0.01 55;
+    --secondary: 0.28 0.028 253;
+    --secondary-foreground: 0.962 0.004 260;
+    --muted: 0.26 0.024 253;
+    --muted-foreground: 0.68 0.01 260;
+    --accent: 0.34 0.034 253;
+    --accent-foreground: 0.962 0.004 260;
+    --destructive: 0.63 0.22 27;
+    --destructive-foreground: 0.985 0 0;
+    --border: 0.34 0.03 252;
+    --input: 0.28 0.026 252;
+    --ring: 0.7 0.188 55;
+    --chart-1: 0.7 0.188 55;
+    --chart-2: 0.5 0.065 232;
+    --chart-3: 0.6 0.155 145;
+    --chart-4: 0.58 0.16 245;
+    --chart-5: 0.68 0.01 260;
+    --sidebar: 0.19 0.02 255;
+    --sidebar-foreground: 0.962 0.004 260;
+    --sidebar-primary: 0.7 0.188 55;
+    --sidebar-primary-foreground: 0.1 0.01 55;
+    --sidebar-accent: 0.28 0.028 253;
+    --sidebar-accent-foreground: 0.962 0.004 260;
+    --sidebar-border: 0.34 0.03 252;
+    --sidebar-ring: 0.7 0.188 55;
+  }
+
+  * {
+    @apply border-border;
+  }
+
+  html {
+    color-scheme: dark;
+  }
+
+  body {
+    @apply bg-background text-foreground;
+    font-family: "GeneralSans", "Inter", system-ui, sans-serif;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  h1,
+  h2,
+  h3 {
+    font-family: "BricolageGrotesque", "Inter", system-ui, sans-serif;
+  }
+}
+
+@layer utilities {
+  .industrial-card {
+    background: oklch(var(--card));
+    border: 1px solid oklch(var(--border));
+    border-radius: var(--radius);
+    box-shadow: 0 4px 24px rgba(0, 0, 0, 0.4), 0 1px 4px rgba(0, 0, 0, 0.3);
+  }
+
+  .kpi-steel-blue {
+    background: linear-gradient(
+      135deg,
+      oklch(0.3 0.055 232),
+      oklch(0.22 0.04 232)
+    );
+    border: 1px solid oklch(0.42 0.065 232);
+  }
+
+  .kpi-green {
+    background: linear-gradient(
+      135deg,
+      oklch(0.28 0.08 145),
+      oklch(0.2 0.055 145)
+    );
+    border: 1px solid oklch(0.42 0.12 145);
+  }
+
+  .kpi-orange {
+    background: linear-gradient(
+      135deg,
+      oklch(0.38 0.12 55),
+      oklch(0.24 0.08 55)
+    );
+    border: 1px solid oklch(0.55 0.16 55);
+  }
+
+  .kpi-blue {
+    background: linear-gradient(
+      135deg,
+      oklch(0.3 0.09 245),
+      oklch(0.2 0.06 245)
+    );
+    border: 1px solid oklch(0.44 0.13 245);
+  }
+
+  .status-pending {
+    background: oklch(0.5 0.16 55 / 0.2);
+    color: oklch(0.8 0.14 55);
+    border: 1px solid oklch(0.55 0.14 55 / 0.5);
+  }
+
+  .status-completed {
+    background: oklch(0.45 0.12 145 / 0.2);
+    color: oklch(0.75 0.13 145);
+    border: 1px solid oklch(0.52 0.12 145 / 0.5);
+  }
+
+  .status-overdue {
+    background: oklch(0.45 0.18 27 / 0.2);
+    color: oklch(0.75 0.17 27);
+    border: 1px solid oklch(0.52 0.17 27 / 0.5);
+  }
+
+  .status-rejected {
+    background: oklch(0.45 0.18 27 / 0.2);
+    color: oklch(0.75 0.17 27);
+    border: 1px solid oklch(0.52 0.17 27 / 0.5);
+  }
+}

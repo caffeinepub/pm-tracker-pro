@@ -1,0 +1,2574 @@
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { Checkbox } from "@/components/ui/checkbox";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import {
+  Activity,
+  AlertTriangle,
+  Calendar,
+  CheckCircle2,
+  ClipboardList,
+  Clock,
+  Database,
+  Download,
+  FileSpreadsheet,
+  LogOut,
+  Plus,
+  Settings,
+  Trash2,
+  Upload,
+  Users,
+  X,
+} from "lucide-react";
+import { motion } from "motion/react";
+import { useRef, useState } from "react";
+import { toast } from "sonner";
+// eslint-disable-next-line
+const XLSX = (window as any).XLSX;
+import type { ChecklistItem, ChecklistTemplate, Machine } from "../backend";
+import MorningPopup from "../components/MorningPopup";
+import NotificationBell from "../components/NotificationBell";
+import type {
+  AppUser,
+  PMPlanExtended,
+  UserRecord,
+} from "../context/AppContext";
+import { useApp } from "../context/AppContext";
+import { exportAllDataToExcel } from "../lib/exportExcel";
+
+// CSV export helper
+function downloadCSV(rows: string[][], filename: string) {
+  const csv = rows
+    .map((r) => r.map((c) => `"${String(c).replace(/"/g, '""')}"`).join(","))
+    .join("\n");
+  const blob = new Blob([csv], { type: "text/csv" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = filename;
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
+// Simple CSV parser
+function parseCSV(text: string): string[][] {
+  return text
+    .trim()
+    .split("\n")
+    .map((line) =>
+      line
+        .split(",")
+        .map((cell) => cell.trim().replace(/^"|"$/g, "").replace(/""/g, '"')),
+    );
+}
+
+interface AddMachineForm {
+  id: string;
+  name: string;
+  department: string;
+  location: string;
+  machineType: string;
+}
+
+const EMPTY_MACHINE: AddMachineForm = {
+  id: "",
+  name: "",
+  department: "",
+  location: "",
+  machineType: "",
+};
+
+// ---- UsersTab component ----
+
+interface UsersTabProps {
+  currentUser: AppUser | null;
+  getUsers: () => Record<string, UserRecord>;
+  createUser: (
+    username: string,
+    password: string,
+    name: string,
+    role: "admin" | "operator",
+  ) => boolean;
+  updateUser: (
+    username: string,
+    updates: { password?: string; name?: string; role?: "admin" | "operator" },
+  ) => void;
+  deleteUser: (username: string) => void;
+}
+
+function UsersTab({
+  currentUser,
+  getUsers,
+  createUser,
+  updateUser,
+  deleteUser,
+}: UsersTabProps) {
+  const [refresh, setRefresh] = useState(0);
+  const users = getUsers();
+  const userEntries = Object.entries(users);
+
+  const [addDialogOpen, setAddDialogOpen] = useState(false);
+  const [editDialogOpen, setEditDialogOpen] = useState(false);
+  const [editTarget, setEditTarget] = useState<string | null>(null);
+
+  const [form, setForm] = useState({
+    username: "",
+    name: "",
+    password: "",
+    role: "operator" as "admin" | "operator",
+  });
+  const [editForm, setEditForm] = useState({
+    name: "",
+    password: "",
+    role: "operator" as "admin" | "operator",
+  });
+
+  const handleAdd = () => {
+    if (!form.username.trim() || !form.password.trim() || !form.name.trim()) {
+      toast.error("All fields are required.");
+      return;
+    }
+    const ok = createUser(
+      form.username.trim(),
+      form.password.trim(),
+      form.name.trim(),
+      form.role,
+    );
+    if (!ok) {
+      toast.error("Username already exists.");
+      return;
+    }
+    toast.success(`User "${form.username}" created.`);
+    setForm({ username: "", name: "", password: "", role: "operator" });
+    setAddDialogOpen(false);
+    setRefresh((r) => r + 1);
+  };
+
+  const openEdit = (username: string) => {
+    const u = users[username];
+    if (!u) return;
+    setEditTarget(username);
+    setEditForm({ name: u.name, password: "", role: u.role });
+    setEditDialogOpen(true);
+  };
+
+  const handleEdit = () => {
+    if (!editTarget) return;
+    const updates: {
+      password?: string;
+      name?: string;
+      role?: "admin" | "operator";
+    } = {
+      name: editForm.name,
+      role: editForm.role,
+    };
+    if (editForm.password.trim()) updates.password = editForm.password.trim();
+    updateUser(editTarget, updates);
+    toast.success(`User "${editTarget}" updated.`);
+    setEditDialogOpen(false);
+    setEditTarget(null);
+    setRefresh((r) => r + 1);
+  };
+
+  const handleDelete = (username: string) => {
+    deleteUser(username);
+    toast.success(`User "${username}" deleted.`);
+    setRefresh((r) => r + 1);
+  };
+
+  void refresh; // used to trigger re-render
+
+  const inputStyle = {
+    background: "oklch(0.20 0.022 252)",
+    borderColor: "oklch(0.34 0.030 252)",
+  };
+  const labelStyle = { color: "oklch(0.68 0.010 260)" };
+
+  return (
+    <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }}>
+      <div className="flex items-center justify-between mb-4">
+        <h2
+          className="text-lg font-semibold"
+          style={{ color: "oklch(0.96 0.004 260)" }}
+        >
+          User Management
+        </h2>
+        <Button
+          data-ocid="users.open_modal_button"
+          onClick={() => setAddDialogOpen(true)}
+          className="flex items-center gap-2"
+          style={{
+            background: "oklch(0.70 0.188 55)",
+            color: "oklch(0.10 0.010 55)",
+          }}
+        >
+          <Plus className="w-4 h-4" /> Add User
+        </Button>
+      </div>
+
+      <div
+        className="rounded-lg overflow-hidden"
+        style={{ border: "1px solid oklch(0.34 0.030 252)" }}
+      >
+        <Table data-ocid="users.table">
+          <TableHeader>
+            <TableRow
+              style={{
+                background: "oklch(0.22 0.022 252)",
+                borderColor: "oklch(0.34 0.030 252)",
+              }}
+            >
+              <TableHead style={{ color: "oklch(0.70 0.188 55)" }}>
+                Username
+              </TableHead>
+              <TableHead style={{ color: "oklch(0.70 0.188 55)" }}>
+                Full Name
+              </TableHead>
+              <TableHead style={{ color: "oklch(0.70 0.188 55)" }}>
+                Role
+              </TableHead>
+              <TableHead style={{ color: "oklch(0.70 0.188 55)" }}>
+                Actions
+              </TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {userEntries.length === 0 && (
+              <TableRow>
+                <TableCell
+                  colSpan={4}
+                  className="text-center py-8"
+                  style={{ color: "oklch(0.60 0.010 260)" }}
+                >
+                  No users found.
+                </TableCell>
+              </TableRow>
+            )}
+            {userEntries.map(([username, u], idx) => (
+              <TableRow
+                key={username}
+                data-ocid={`users.row.${idx + 1}`}
+                style={{
+                  borderColor: "oklch(0.28 0.026 252)",
+                  background:
+                    idx % 2 === 0
+                      ? "oklch(0.18 0.020 252)"
+                      : "oklch(0.20 0.022 252)",
+                }}
+              >
+                <TableCell
+                  className="font-mono font-semibold"
+                  style={{ color: "oklch(0.88 0.010 260)" }}
+                >
+                  {username}
+                </TableCell>
+                <TableCell style={{ color: "oklch(0.78 0.010 260)" }}>
+                  {u.name}
+                </TableCell>
+                <TableCell>
+                  <span
+                    className="px-2 py-0.5 rounded text-xs font-semibold uppercase"
+                    style={
+                      u.role === "admin"
+                        ? {
+                            background: "oklch(0.70 0.188 55 / 0.2)",
+                            color: "oklch(0.80 0.180 55)",
+                          }
+                        : {
+                            background: "oklch(0.50 0.065 232 / 0.2)",
+                            color: "oklch(0.70 0.065 232)",
+                          }
+                    }
+                  >
+                    {u.role}
+                  </span>
+                </TableCell>
+                <TableCell>
+                  <div className="flex gap-2">
+                    <Button
+                      data-ocid={`users.edit_button.${idx + 1}`}
+                      size="sm"
+                      variant="outline"
+                      onClick={() => openEdit(username)}
+                      style={{
+                        borderColor: "oklch(0.34 0.030 252)",
+                        color: "oklch(0.78 0.010 260)",
+                      }}
+                    >
+                      Edit
+                    </Button>
+                    <Button
+                      data-ocid={`users.delete_button.${idx + 1}`}
+                      size="sm"
+                      variant="outline"
+                      disabled={currentUser?.username === username}
+                      onClick={() => handleDelete(username)}
+                      style={{
+                        borderColor: "oklch(0.63 0.22 27 / 0.5)",
+                        color:
+                          currentUser?.username === username
+                            ? "oklch(0.45 0.010 260)"
+                            : "oklch(0.72 0.18 27)",
+                      }}
+                    >
+                      <Trash2 className="w-3.5 h-3.5" />
+                    </Button>
+                  </div>
+                </TableCell>
+              </TableRow>
+            ))}
+          </TableBody>
+        </Table>
+      </div>
+
+      {/* Add User Dialog */}
+      <Dialog open={addDialogOpen} onOpenChange={setAddDialogOpen}>
+        <DialogContent
+          data-ocid="users.dialog"
+          className="max-w-sm"
+          style={{
+            background: "oklch(0.22 0.022 252)",
+            border: "1px solid oklch(0.34 0.030 252)",
+            color: "oklch(0.88 0.010 260)",
+          }}
+        >
+          <DialogHeader>
+            <DialogTitle style={{ color: "oklch(0.96 0.004 260)" }}>
+              Create New User
+            </DialogTitle>
+          </DialogHeader>
+          <div className="space-y-3 mt-2">
+            <div>
+              <Label style={labelStyle}>Username</Label>
+              <Input
+                data-ocid="users.input"
+                value={form.username}
+                onChange={(e) =>
+                  setForm((f) => ({ ...f, username: e.target.value }))
+                }
+                placeholder="e.g. operator1"
+                className="mt-1"
+                style={inputStyle}
+              />
+            </div>
+            <div>
+              <Label style={labelStyle}>Full Name</Label>
+              <Input
+                data-ocid="users.input"
+                value={form.name}
+                onChange={(e) =>
+                  setForm((f) => ({ ...f, name: e.target.value }))
+                }
+                placeholder="e.g. Rajesh Kumar"
+                className="mt-1"
+                style={inputStyle}
+              />
+            </div>
+            <div>
+              <Label style={labelStyle}>Password</Label>
+              <Input
+                data-ocid="users.input"
+                type="password"
+                value={form.password}
+                onChange={(e) =>
+                  setForm((f) => ({ ...f, password: e.target.value }))
+                }
+                placeholder="Enter password"
+                className="mt-1"
+                style={inputStyle}
+              />
+            </div>
+            <div>
+              <Label style={labelStyle}>Role</Label>
+              <Select
+                value={form.role}
+                onValueChange={(v) =>
+                  setForm((f) => ({ ...f, role: v as "admin" | "operator" }))
+                }
+              >
+                <SelectTrigger
+                  data-ocid="users.select"
+                  className="mt-1"
+                  style={inputStyle}
+                >
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent
+                  style={{
+                    background: "oklch(0.22 0.022 252)",
+                    borderColor: "oklch(0.34 0.030 252)",
+                  }}
+                >
+                  <SelectItem value="operator">Operator</SelectItem>
+                  <SelectItem value="admin">Admin</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="flex gap-2 pt-2">
+              <Button
+                data-ocid="users.cancel_button"
+                variant="outline"
+                className="flex-1"
+                onClick={() => setAddDialogOpen(false)}
+                style={{
+                  borderColor: "oklch(0.34 0.030 252)",
+                  color: "oklch(0.78 0.010 260)",
+                }}
+              >
+                Cancel
+              </Button>
+              <Button
+                data-ocid="users.submit_button"
+                className="flex-1"
+                onClick={handleAdd}
+                style={{
+                  background: "oklch(0.70 0.188 55)",
+                  color: "oklch(0.10 0.010 55)",
+                }}
+              >
+                Create User
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Edit User Dialog */}
+      <Dialog open={editDialogOpen} onOpenChange={setEditDialogOpen}>
+        <DialogContent
+          data-ocid="users.dialog"
+          className="max-w-sm"
+          style={{
+            background: "oklch(0.22 0.022 252)",
+            border: "1px solid oklch(0.34 0.030 252)",
+            color: "oklch(0.88 0.010 260)",
+          }}
+        >
+          <DialogHeader>
+            <DialogTitle style={{ color: "oklch(0.96 0.004 260)" }}>
+              Edit User: {editTarget}
+            </DialogTitle>
+          </DialogHeader>
+          <div className="space-y-3 mt-2">
+            <div>
+              <Label style={labelStyle}>Full Name</Label>
+              <Input
+                data-ocid="users.input"
+                value={editForm.name}
+                onChange={(e) =>
+                  setEditForm((f) => ({ ...f, name: e.target.value }))
+                }
+                placeholder="Full name"
+                className="mt-1"
+                style={inputStyle}
+              />
+            </div>
+            <div>
+              <Label style={labelStyle}>
+                New Password{" "}
+                <span
+                  style={{ color: "oklch(0.55 0.010 260)", fontWeight: 400 }}
+                >
+                  (leave blank to keep current)
+                </span>
+              </Label>
+              <Input
+                data-ocid="users.input"
+                type="password"
+                value={editForm.password}
+                onChange={(e) =>
+                  setEditForm((f) => ({ ...f, password: e.target.value }))
+                }
+                placeholder="New password (optional)"
+                className="mt-1"
+                style={inputStyle}
+              />
+            </div>
+            <div>
+              <Label style={labelStyle}>Role</Label>
+              <Select
+                value={editForm.role}
+                onValueChange={(v) =>
+                  setEditForm((f) => ({
+                    ...f,
+                    role: v as "admin" | "operator",
+                  }))
+                }
+              >
+                <SelectTrigger
+                  data-ocid="users.select"
+                  className="mt-1"
+                  style={inputStyle}
+                >
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent
+                  style={{
+                    background: "oklch(0.22 0.022 252)",
+                    borderColor: "oklch(0.34 0.030 252)",
+                  }}
+                >
+                  <SelectItem value="operator">Operator</SelectItem>
+                  <SelectItem value="admin">Admin</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="flex gap-2 pt-2">
+              <Button
+                data-ocid="users.cancel_button"
+                variant="outline"
+                className="flex-1"
+                onClick={() => setEditDialogOpen(false)}
+                style={{
+                  borderColor: "oklch(0.34 0.030 252)",
+                  color: "oklch(0.78 0.010 260)",
+                }}
+              >
+                Cancel
+              </Button>
+              <Button
+                data-ocid="users.save_button"
+                className="flex-1"
+                onClick={handleEdit}
+                style={{
+                  background: "oklch(0.70 0.188 55)",
+                  color: "oklch(0.10 0.010 55)",
+                }}
+              >
+                Save Changes
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+    </motion.div>
+  );
+}
+// ---- end UsersTab ----
+
+export default function AdminPage() {
+  const {
+    user,
+    logout,
+    machines,
+    pmPlans,
+    pmRecords,
+    checklistTemplates,
+    addMachine,
+    navigate,
+    approveRecord,
+    rejectRecord,
+    addPMPlan,
+    updatePMPlan,
+    deletePMPlan,
+    updateChecklistTemplates,
+    getUsers,
+    createUser,
+    updateUser,
+    deleteUser,
+  } = useApp();
+  const [uploadStatus, setUploadStatus] = useState<
+    "idle" | "success" | "error"
+  >("idle");
+  const [uploadMsg, setUploadMsg] = useState("");
+  const [yearlyPlanStatus, setYearlyPlanStatus] = useState<
+    "idle" | "success" | "error"
+  >("idle");
+  const [yearlyPlanMsg, setYearlyPlanMsg] = useState("");
+  const [checklistUploadStatus, setChecklistUploadStatus] = useState<
+    "idle" | "success" | "error"
+  >("idle");
+  const [checklistUploadMsg, setChecklistUploadMsg] = useState("");
+  const [newMachine, setNewMachine] = useState<AddMachineForm>(EMPTY_MACHINE);
+  const [showAddForm, setShowAddForm] = useState(false);
+  const [editingTemplates, setEditingTemplates] = useState<
+    Record<string, ChecklistTemplate>
+  >({});
+  const fileRef = useRef<HTMLInputElement>(null);
+  const yearlyPlanRef = useRef<HTMLInputElement>(null);
+  const checklistUploadRef = useRef<HTMLInputElement>(null);
+
+  // Yearly Plan editing state
+  const [editCell, setEditCell] = useState<{
+    machineId: string;
+    month: number;
+    plan: PMPlanExtended | null;
+  } | null>(null);
+  const [editEnabled, setEditEnabled] = useState(false);
+  const [editDate, setEditDate] = useState("");
+  const [editFrequency, setEditFrequency] = useState("Monthly");
+
+  const MONTHS = [
+    "Jan",
+    "Feb",
+    "Mar",
+    "Apr",
+    "May",
+    "Jun",
+    "Jul",
+    "Aug",
+    "Sep",
+    "Oct",
+    "Nov",
+    "Dec",
+  ];
+  const currentMonth = new Date().getMonth() + 1;
+  const currentYear = new Date().getFullYear();
+
+  function openCellEdit(machineId: string, month: number) {
+    const plan =
+      pmPlans.find(
+        (p) => p.machineId === machineId && Number(p.month) === month,
+      ) || null;
+    setEditCell({ machineId, month, plan });
+    setEditEnabled(!!plan);
+    setEditDate(plan?.scheduledDate || "");
+    setEditFrequency(plan?.frequency || "Monthly");
+  }
+
+  function saveCellEdit() {
+    if (!editCell) return;
+    const { machineId, month, plan } = editCell;
+    if (!editEnabled) {
+      if (plan) deletePMPlan(machineId, BigInt(month));
+    } else {
+      const updates: Partial<PMPlanExtended> = {
+        frequency: editFrequency,
+        scheduledDate: editDate || undefined,
+      };
+      if (plan) {
+        updatePMPlan(machineId, BigInt(month), updates);
+      } else {
+        addPMPlan({
+          machineId,
+          month: BigInt(month),
+          frequency: editFrequency,
+          checklistTemplateId: "",
+          ...updates,
+        } as PMPlanExtended);
+      }
+    }
+    setEditCell(null);
+    toast.success("PM Plan updated");
+  }
+
+  if (user?.role !== "admin") {
+    return (
+      <div
+        className="min-h-screen flex items-center justify-center"
+        style={{ background: "oklch(0.165 0.022 252)" }}
+      >
+        <div className="text-center">
+          <AlertTriangle
+            className="w-12 h-12 mx-auto mb-4"
+            style={{ color: "oklch(0.63 0.22 27)" }}
+          />
+          <p className="text-lg font-semibold">Access Denied</p>
+          <p
+            className="text-sm mt-1"
+            style={{ color: "oklch(0.68 0.010 260)" }}
+          >
+            Admin privileges required.
+          </p>
+          <Button className="mt-4" onClick={() => navigate("dashboard")}>
+            Back to Dashboard
+          </Button>
+        </div>
+      </div>
+    );
+  }
+
+  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setUploadStatus("idle");
+
+    try {
+      const text = await file.text();
+      const rows = parseCSV(text);
+      if (rows.length < 2)
+        throw new Error(
+          "CSV must have a header row and at least one data row.",
+        );
+
+      const headers = rows[0].map((h) => h.toLowerCase().trim());
+      const idIdx = headers.indexOf("id");
+      const nameIdx = headers.indexOf("name");
+      const deptIdx = headers.indexOf("department");
+      const locIdx = headers.indexOf("location");
+      const typeIdx =
+        headers.indexOf("machinetype") !== -1
+          ? headers.indexOf("machinetype")
+          : headers.indexOf("type");
+
+      if (idIdx === -1 || nameIdx === -1)
+        throw new Error("CSV must have 'ID' and 'Name' columns.");
+
+      let count = 0;
+      for (const row of rows.slice(1)) {
+        if (!row[idIdx] || !row[nameIdx]) continue;
+        const machine: Machine = {
+          id: row[idIdx],
+          name: row[nameIdx],
+          department: deptIdx >= 0 ? row[deptIdx] : "General",
+          location: locIdx >= 0 ? row[locIdx] : "Unknown",
+          machineType: typeIdx >= 0 ? row[typeIdx] : "General",
+        };
+        addMachine(machine);
+        count++;
+      }
+      setUploadStatus("success");
+      setUploadMsg(
+        `✓ Successfully imported ${count} machine(s) from ${file.name}`,
+      );
+      toast.success(`${count} machines imported successfully`);
+    } catch (err) {
+      setUploadStatus("error");
+      setUploadMsg(
+        `Error: ${err instanceof Error ? err.message : "Unknown error"}`,
+      );
+      toast.error("Import failed. Please check the CSV format.");
+    }
+    if (fileRef.current) fileRef.current.value = "";
+  };
+
+  const handleDownloadTemplate = () => {
+    downloadCSV(
+      [
+        ["ID", "Name", "Department", "Location", "MachineType"],
+        ["MC-001", "Example Machine", "Production", "Shop Floor", "CNC"],
+      ],
+      "machines_template.csv",
+    );
+    toast.success("Template downloaded");
+  };
+
+  const handleExportRecords = () => {
+    const rows = [
+      [
+        "Record ID",
+        "Machine ID",
+        "Operator",
+        "Status",
+        "Completed Date",
+        "Items Count",
+      ],
+      ...pmRecords.map((r) => [
+        r.id,
+        r.machineId,
+        r.operatorName,
+        r.status,
+        new Date(Number(r.completedDate)).toLocaleString("en-IN"),
+        String(r.checklistResults.length),
+      ]),
+    ];
+    downloadCSV(
+      rows,
+      `pm_records_${new Date().toISOString().slice(0, 10)}.csv`,
+    );
+    toast.success("Records exported to CSV");
+  };
+
+  const handleExportExcel = () => {
+    exportAllDataToExcel(machines, pmPlans, pmRecords, checklistTemplates);
+    toast.success("Excel report downloaded! Check your downloads folder.");
+  };
+
+  const MONTH_MAP: Record<string, number> = {
+    jan: 1,
+    feb: 2,
+    mar: 3,
+    apr: 4,
+    may: 5,
+    jun: 6,
+    jul: 7,
+    aug: 8,
+    sep: 9,
+    oct: 10,
+    nov: 11,
+    dec: 12,
+  };
+
+  const handleYearlyPlanUpload = async (
+    e: React.ChangeEvent<HTMLInputElement>,
+  ) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setYearlyPlanStatus("idle");
+    try {
+      const data = await file.arrayBuffer();
+      const wb = XLSX.read(data, { type: "array" });
+      const ws = wb.Sheets[wb.SheetNames[0]];
+      const rows = XLSX.utils.sheet_to_json(ws, { defval: "" });
+      if (rows.length === 0)
+        throw new Error("No data rows found in the Excel file.");
+      let count = 0;
+      for (const row of rows) {
+        const machineId = String(
+          row.MachineID ?? row.machineid ?? row["Machine ID"] ?? "",
+        ).trim();
+        const monthRaw = String(row.Month ?? row.month ?? "")
+          .trim()
+          .toLowerCase();
+        const frequency =
+          String(row.Frequency ?? row.frequency ?? "Monthly").trim() ||
+          "Monthly";
+        const scheduledDate = String(
+          row.ScheduledDate ?? row["Scheduled Date"] ?? "",
+        ).trim();
+        if (!machineId || !monthRaw) continue;
+        let month = Number.parseInt(monthRaw, 10);
+        if (Number.isNaN(month)) {
+          month = MONTH_MAP[monthRaw.slice(0, 3)] ?? 0;
+        }
+        if (month < 1 || month > 12) continue;
+        addPMPlan({
+          machineId,
+          month: BigInt(month),
+          frequency,
+          checklistTemplateId: "",
+          scheduledDate: scheduledDate || undefined,
+        } as PMPlanExtended);
+        count++;
+      }
+      setYearlyPlanStatus("success");
+      setYearlyPlanMsg(`✓ Imported ${count} plan entries from ${file.name}`);
+      toast.success(`${count} yearly plan entries imported`);
+    } catch (err) {
+      setYearlyPlanStatus("error");
+      setYearlyPlanMsg(
+        `Error: ${err instanceof Error ? err.message : "Unknown error"}`,
+      );
+      toast.error("Yearly plan import failed.");
+    }
+    if (yearlyPlanRef.current) yearlyPlanRef.current.value = "";
+  };
+
+  const handleDownloadYearlyPlanTemplate = () => {
+    const wb = XLSX.utils.book_new();
+    const rows = [
+      ["MachineID", "Month", "Frequency", "ScheduledDate"],
+      ["MC-001", 1, "Monthly", "2026-01-15"],
+      ["MC-002", 2, "Fortnightly", "2026-02-01"],
+    ];
+    const ws = XLSX.utils.aoa_to_sheet(rows);
+    ws["!cols"] = [{ wch: 14 }, { wch: 8 }, { wch: 14 }, { wch: 16 }];
+    XLSX.utils.book_append_sheet(wb, ws, "Yearly Plan");
+    XLSX.writeFile(wb, "yearly_plan_template.xlsx");
+    toast.success("Yearly plan template downloaded");
+  };
+
+  const VALID_ITEM_TYPES = [
+    "visual",
+    "measurement",
+    "lubrication",
+    "safety",
+    "cleaning",
+    "maintenance",
+  ] as const;
+
+  const handleChecklistUpload = async (
+    e: React.ChangeEvent<HTMLInputElement>,
+  ) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setChecklistUploadStatus("idle");
+    try {
+      const data = await file.arrayBuffer();
+      const wb = XLSX.read(data, { type: "array" });
+      const templates: ChecklistTemplate[] = [];
+      for (const sheetName of wb.SheetNames) {
+        const ws = wb.Sheets[sheetName];
+        const rows = XLSX.utils.sheet_to_json(ws, { defval: "" });
+        const items = rows
+          .filter((row) =>
+            String(row.Description ?? row.description ?? "").trim(),
+          )
+          .map((row, idx) => {
+            const rawType = String(row.Type ?? row.type ?? "visual")
+              .trim()
+              .toLowerCase();
+            const itemType = (
+              VALID_ITEM_TYPES.includes(
+                rawType as (typeof VALID_ITEM_TYPES)[number],
+              )
+                ? rawType
+                : "visual"
+            ) as (typeof VALID_ITEM_TYPES)[number];
+            return {
+              id: `item-${sheetName.toLowerCase().replace(/\s+/g, "-")}-${idx + 1}`,
+              description: String(
+                row.Description ?? row.description ?? "",
+              ).trim(),
+              itemType,
+            };
+          });
+        templates.push({
+          id: `tmpl-${sheetName.toLowerCase().replace(/\s+/g, "-")}`,
+          machineType: sheetName,
+          items,
+        });
+      }
+      updateChecklistTemplates(templates);
+      setChecklistUploadStatus("success");
+      setChecklistUploadMsg(
+        `✓ Imported ${templates.length} checklist template(s) from ${file.name}`,
+      );
+      toast.success(`${templates.length} checklist templates imported`);
+    } catch (err) {
+      setChecklistUploadStatus("error");
+      setChecklistUploadMsg(
+        `Error: ${err instanceof Error ? err.message : "Unknown error"}`,
+      );
+      toast.error("Checklist import failed.");
+    }
+    if (checklistUploadRef.current) checklistUploadRef.current.value = "";
+  };
+
+  const handleDownloadChecklistTemplate = () => {
+    const wb = XLSX.utils.book_new();
+    const sampleRows = [
+      ["No", "Description", "Type"],
+      [1, "Check oil level", "lubrication"],
+      [2, "Inspect drive belt", "visual"],
+      [3, "Measure spindle vibration", "measurement"],
+    ];
+    for (const name of ["Machine_A", "Machine_B"]) {
+      const ws = XLSX.utils.aoa_to_sheet(sampleRows);
+      ws["!cols"] = [{ wch: 6 }, { wch: 36 }, { wch: 16 }];
+      XLSX.utils.book_append_sheet(wb, ws, name);
+    }
+    XLSX.writeFile(wb, "checklist_template.xlsx");
+    toast.success("Checklist template downloaded");
+  };
+
+  const handleAddMachine = () => {
+    if (!newMachine.id || !newMachine.name) {
+      toast.error("Machine ID and Name are required.");
+      return;
+    }
+    addMachine({ ...newMachine });
+    setNewMachine(EMPTY_MACHINE);
+    setShowAddForm(false);
+    toast.success(`Machine '${newMachine.name}' added successfully`);
+  };
+
+  return (
+    <>
+      <MorningPopup />
+      <div
+        className="min-h-screen flex flex-col"
+        style={{ background: "oklch(0.165 0.022 252)" }}
+      >
+        {/* Header */}
+        <header
+          className="sticky top-0 z-50 border-b"
+          style={{
+            background: "oklch(0.19 0.020 255)",
+            borderColor: "oklch(0.34 0.030 252)",
+          }}
+        >
+          <div className="max-w-7xl mx-auto px-4 h-16 flex items-center justify-between">
+            <div className="flex items-center gap-3">
+              <button
+                type="button"
+                data-ocid="admin.close_button"
+                onClick={() => navigate("dashboard")}
+                className="p-2 rounded-lg hover:bg-white/5 transition-colors mr-1"
+                style={{ color: "oklch(0.68 0.010 260)" }}
+              >
+                ←
+              </button>
+              <div className="flex items-center gap-2">
+                <Settings
+                  className="w-5 h-5"
+                  style={{ color: "oklch(0.80 0.180 55)" }}
+                />
+                <span
+                  className="text-lg font-bold"
+                  style={{ fontFamily: "BricolageGrotesque, sans-serif" }}
+                >
+                  Admin{" "}
+                  <span style={{ color: "oklch(0.80 0.180 55)" }}>Panel</span>
+                </span>
+              </div>
+            </div>
+            <div className="flex items-center gap-3">
+              <div className="hidden sm:flex items-center gap-2">
+                <div
+                  className="w-7 h-7 rounded-full flex items-center justify-center font-semibold text-xs"
+                  style={{
+                    background: "oklch(0.70 0.188 55 / 0.20)",
+                    color: "oklch(0.80 0.180 55)",
+                  }}
+                >
+                  {user?.name?.charAt(0)}
+                </div>
+                <span className="text-sm">{user?.name}</span>
+                <span
+                  className="text-xs px-1.5 py-0.5 rounded"
+                  style={{
+                    background: "oklch(0.70 0.188 55 / 0.15)",
+                    color: "oklch(0.80 0.180 55)",
+                  }}
+                >
+                  ADMIN
+                </span>
+              </div>
+              <button
+                type="button"
+                data-ocid="admin.export_button"
+                onClick={handleExportExcel}
+                className="hidden sm:flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium transition-colors"
+                style={{
+                  background: "oklch(0.70 0.188 55 / 0.15)",
+                  border: "1px solid oklch(0.70 0.188 55 / 0.35)",
+                  color: "oklch(0.80 0.180 55)",
+                }}
+                title="Export all data to Excel"
+              >
+                <Download className="w-4 h-4" />
+                Export to Excel
+              </button>
+              <NotificationBell />
+              <button
+                type="button"
+                data-ocid="admin.button"
+                onClick={() => {
+                  logout();
+                }}
+                className="p-2 rounded-lg hover:bg-white/5"
+                style={{ color: "oklch(0.68 0.010 260)" }}
+                title="Logout"
+              >
+                <LogOut className="w-4 h-4" />
+              </button>
+            </div>
+          </div>
+        </header>
+
+        <main className="flex-1 max-w-7xl mx-auto px-4 py-6 w-full pb-20 md:pb-0">
+          <Tabs defaultValue="upload" data-ocid="admin.panel">
+            <TabsList
+              className="mb-6 grid grid-cols-7 w-full max-w-4xl"
+              style={{ background: "oklch(0.22 0.022 252)" }}
+            >
+              <TabsTrigger
+                data-ocid="admin.tab"
+                value="upload"
+                className="flex items-center gap-1.5 text-xs"
+              >
+                <Upload className="w-3.5 h-3.5" /> Upload
+              </TabsTrigger>
+              <TabsTrigger
+                data-ocid="admin.tab"
+                value="machines"
+                className="flex items-center gap-1.5 text-xs"
+              >
+                <Database className="w-3.5 h-3.5" /> Machines
+              </TabsTrigger>
+              <TabsTrigger
+                data-ocid="admin.tab"
+                value="checklists"
+                className="flex items-center gap-1.5 text-xs"
+              >
+                <ClipboardList className="w-3.5 h-3.5" /> Checklists
+              </TabsTrigger>
+              <TabsTrigger
+                data-ocid="admin.tab"
+                value="records"
+                className="flex items-center gap-1.5 text-xs"
+              >
+                <Activity className="w-3.5 h-3.5" /> Records
+              </TabsTrigger>
+              <TabsTrigger
+                data-ocid="admin.tab"
+                value="approvals"
+                className="flex items-center gap-1.5 text-xs relative"
+              >
+                <Clock className="w-3.5 h-3.5" /> Approvals
+                {pmRecords.filter((r) => r.status === "pending-approval")
+                  .length > 0 && (
+                  <Badge
+                    className="ml-1 h-4 px-1 text-[10px] font-bold"
+                    style={{
+                      background: "oklch(0.62 0.220 25)",
+                      color: "white",
+                    }}
+                  >
+                    {
+                      pmRecords.filter((r) => r.status === "pending-approval")
+                        .length
+                    }
+                  </Badge>
+                )}
+              </TabsTrigger>
+              <TabsTrigger
+                data-ocid="admin.tab"
+                value="yearly-plan"
+                className="flex items-center gap-1.5 text-xs"
+              >
+                <Calendar className="w-3.5 h-3.5" /> Yearly Plan
+              </TabsTrigger>
+              <TabsTrigger
+                data-ocid="admin.tab"
+                value="users"
+                className="flex items-center gap-1.5 text-xs"
+              >
+                <Users className="w-3.5 h-3.5" /> Users
+              </TabsTrigger>
+            </TabsList>
+
+            {/* UPLOAD TAB */}
+            <TabsContent value="upload">
+              <motion.div
+                initial={{ opacity: 0, y: 10 }}
+                animate={{ opacity: 1, y: 0 }}
+                className="max-w-2xl space-y-6"
+              >
+                {/* Section 1: Import Machine Data */}
+                <div className="industrial-card p-6">
+                  <div className="flex items-center gap-2 mb-1">
+                    <Database
+                      className="w-4 h-4"
+                      style={{ color: "oklch(0.80 0.180 55)" }}
+                    />
+                    <h2
+                      className="text-base font-semibold"
+                      style={{ fontFamily: "BricolageGrotesque, sans-serif" }}
+                    >
+                      1. Import Machine Data
+                    </h2>
+                  </div>
+                  <p
+                    className="text-sm mb-5"
+                    style={{ color: "oklch(0.68 0.010 260)" }}
+                  >
+                    Upload a CSV file with machine master data. Download the
+                    template to see the expected format.
+                  </p>
+
+                  <button
+                    type="button"
+                    className="border-2 border-dashed rounded-xl p-8 text-center mb-4 cursor-pointer transition-colors hover:border-primary/60 w-full"
+                    style={{
+                      borderColor: "oklch(0.34 0.030 252)",
+                      background: "oklch(0.20 0.022 252)",
+                    }}
+                    onClick={() => fileRef.current?.click()}
+                  >
+                    <FileSpreadsheet
+                      className="w-10 h-10 mx-auto mb-3"
+                      style={{ color: "oklch(0.68 0.010 260)" }}
+                    />
+                    <p className="text-sm font-medium">
+                      Click to browse CSV file
+                    </p>
+                    <p
+                      className="text-xs mt-1"
+                      style={{ color: "oklch(0.68 0.010 260)" }}
+                    >
+                      Supports: .csv
+                    </p>
+                    <input
+                      ref={fileRef}
+                      data-ocid="admin.upload_button"
+                      type="file"
+                      accept=".csv,.txt"
+                      onChange={handleFileUpload}
+                      className="hidden"
+                    />
+                  </button>
+
+                  {uploadStatus !== "idle" && (
+                    <div
+                      data-ocid={
+                        uploadStatus === "success"
+                          ? "admin.success_state"
+                          : "admin.error_state"
+                      }
+                      className="flex items-center gap-2 p-3 rounded-lg mb-4 text-sm"
+                      style={{
+                        background:
+                          uploadStatus === "success"
+                            ? "oklch(0.45 0.120 145 / 0.15)"
+                            : "oklch(0.45 0.180 27 / 0.15)",
+                        border: `1px solid ${uploadStatus === "success" ? "oklch(0.52 0.120 145 / 0.5)" : "oklch(0.52 0.170 27 / 0.5)"}`,
+                        color:
+                          uploadStatus === "success"
+                            ? "oklch(0.75 0.130 145)"
+                            : "oklch(0.75 0.170 27)",
+                      }}
+                    >
+                      {uploadStatus === "success" ? (
+                        <CheckCircle2 className="w-4 h-4 flex-shrink-0" />
+                      ) : (
+                        <AlertTriangle className="w-4 h-4 flex-shrink-0" />
+                      )}
+                      {uploadMsg}
+                    </div>
+                  )}
+
+                  <Button
+                    data-ocid="admin.secondary_button"
+                    variant="outline"
+                    onClick={handleDownloadTemplate}
+                    className="flex items-center gap-2"
+                    style={{
+                      borderColor: "oklch(0.34 0.030 252)",
+                      color: "oklch(0.68 0.010 260)",
+                    }}
+                  >
+                    <Download className="w-4 h-4" />
+                    Download CSV Template
+                  </Button>
+                </div>
+
+                {/* Divider */}
+                <div className="flex items-center gap-3">
+                  <div
+                    className="flex-1 h-px"
+                    style={{ background: "oklch(0.34 0.030 252)" }}
+                  />
+                  <span
+                    className="text-xs"
+                    style={{ color: "oklch(0.50 0.010 260)" }}
+                  >
+                    EXCEL IMPORTS
+                  </span>
+                  <div
+                    className="flex-1 h-px"
+                    style={{ background: "oklch(0.34 0.030 252)" }}
+                  />
+                </div>
+
+                {/* Section 2: Upload Yearly Plan */}
+                <div className="industrial-card p-6">
+                  <div className="flex items-center gap-2 mb-1">
+                    <Calendar
+                      className="w-4 h-4"
+                      style={{ color: "oklch(0.70 0.155 232)" }}
+                    />
+                    <h2
+                      className="text-base font-semibold"
+                      style={{ fontFamily: "BricolageGrotesque, sans-serif" }}
+                    >
+                      2. Upload Yearly Plan
+                    </h2>
+                  </div>
+                  <p
+                    className="text-sm mb-1"
+                    style={{ color: "oklch(0.68 0.010 260)" }}
+                  >
+                    Upload an Excel file (.xlsx) with the yearly PM plan. Each
+                    row = one machine/month entry.
+                  </p>
+                  <p
+                    className="text-xs mb-5 font-mono"
+                    style={{
+                      color: "oklch(0.55 0.010 260)",
+                      background: "oklch(0.20 0.022 252)",
+                      padding: "4px 8px",
+                      borderRadius: "4px",
+                      display: "inline-block",
+                    }}
+                  >
+                    Columns: MachineID | Month (1-12 or Jan-Dec) | Frequency |
+                    ScheduledDate (YYYY-MM-DD, optional)
+                  </p>
+
+                  <button
+                    type="button"
+                    className="border-2 border-dashed rounded-xl p-8 text-center mb-4 cursor-pointer transition-colors hover:border-primary/60 w-full"
+                    style={{
+                      borderColor: "oklch(0.40 0.070 232 / 0.6)",
+                      background: "oklch(0.20 0.022 252)",
+                    }}
+                    onClick={() => yearlyPlanRef.current?.click()}
+                  >
+                    <FileSpreadsheet
+                      className="w-10 h-10 mx-auto mb-3"
+                      style={{ color: "oklch(0.70 0.155 232)" }}
+                    />
+                    <p className="text-sm font-medium">
+                      Click to browse Excel file
+                    </p>
+                    <p
+                      className="text-xs mt-1"
+                      style={{ color: "oklch(0.68 0.010 260)" }}
+                    >
+                      Supports: .xlsx, .xls
+                    </p>
+                    <input
+                      ref={yearlyPlanRef}
+                      data-ocid="admin.upload_button"
+                      type="file"
+                      accept=".xlsx,.xls"
+                      onChange={handleYearlyPlanUpload}
+                      className="hidden"
+                    />
+                  </button>
+
+                  {yearlyPlanStatus !== "idle" && (
+                    <div
+                      data-ocid={
+                        yearlyPlanStatus === "success"
+                          ? "upload.success_state"
+                          : "upload.error_state"
+                      }
+                      className="flex items-center gap-2 p-3 rounded-lg mb-4 text-sm"
+                      style={{
+                        background:
+                          yearlyPlanStatus === "success"
+                            ? "oklch(0.45 0.120 145 / 0.15)"
+                            : "oklch(0.45 0.180 27 / 0.15)",
+                        border: `1px solid ${yearlyPlanStatus === "success" ? "oklch(0.52 0.120 145 / 0.5)" : "oklch(0.52 0.170 27 / 0.5)"}`,
+                        color:
+                          yearlyPlanStatus === "success"
+                            ? "oklch(0.75 0.130 145)"
+                            : "oklch(0.75 0.170 27)",
+                      }}
+                    >
+                      {yearlyPlanStatus === "success" ? (
+                        <CheckCircle2 className="w-4 h-4 flex-shrink-0" />
+                      ) : (
+                        <AlertTriangle className="w-4 h-4 flex-shrink-0" />
+                      )}
+                      {yearlyPlanMsg}
+                    </div>
+                  )}
+
+                  <Button
+                    data-ocid="admin.secondary_button"
+                    variant="outline"
+                    onClick={handleDownloadYearlyPlanTemplate}
+                    className="flex items-center gap-2"
+                    style={{
+                      borderColor: "oklch(0.40 0.070 232 / 0.5)",
+                      color: "oklch(0.70 0.155 232)",
+                    }}
+                  >
+                    <Download className="w-4 h-4" />
+                    Download Yearly Plan Template
+                  </Button>
+                </div>
+
+                {/* Section 3: Upload Checklists */}
+                <div className="industrial-card p-6">
+                  <div className="flex items-center gap-2 mb-1">
+                    <ClipboardList
+                      className="w-4 h-4"
+                      style={{ color: "oklch(0.75 0.130 145)" }}
+                    />
+                    <h2
+                      className="text-base font-semibold"
+                      style={{ fontFamily: "BricolageGrotesque, sans-serif" }}
+                    >
+                      3. Upload Checklists
+                    </h2>
+                  </div>
+                  <p
+                    className="text-sm mb-1"
+                    style={{ color: "oklch(0.68 0.010 260)" }}
+                  >
+                    Upload an Excel file where{" "}
+                    <strong>each sheet = one machine</strong>. Sheet name =
+                    Machine ID / Name.
+                  </p>
+                  <p
+                    className="text-xs mb-5 font-mono"
+                    style={{
+                      color: "oklch(0.55 0.010 260)",
+                      background: "oklch(0.20 0.022 252)",
+                      padding: "4px 8px",
+                      borderRadius: "4px",
+                      display: "inline-block",
+                    }}
+                  >
+                    Sheet columns: No | Description | Type
+                    (visual/measurement/lubrication/safety/cleaning/maintenance)
+                  </p>
+
+                  <button
+                    type="button"
+                    className="border-2 border-dashed rounded-xl p-8 text-center mb-4 cursor-pointer transition-colors hover:border-primary/60 w-full"
+                    style={{
+                      borderColor: "oklch(0.40 0.100 145 / 0.6)",
+                      background: "oklch(0.20 0.022 252)",
+                    }}
+                    onClick={() => checklistUploadRef.current?.click()}
+                  >
+                    <FileSpreadsheet
+                      className="w-10 h-10 mx-auto mb-3"
+                      style={{ color: "oklch(0.75 0.130 145)" }}
+                    />
+                    <p className="text-sm font-medium">
+                      Click to browse Excel file (multi-sheet)
+                    </p>
+                    <p
+                      className="text-xs mt-1"
+                      style={{ color: "oklch(0.68 0.010 260)" }}
+                    >
+                      Sheet 1 = Machine A, Sheet 2 = Machine B, etc.
+                    </p>
+                    <input
+                      ref={checklistUploadRef}
+                      data-ocid="admin.upload_button"
+                      type="file"
+                      accept=".xlsx,.xls"
+                      onChange={handleChecklistUpload}
+                      className="hidden"
+                    />
+                  </button>
+
+                  {checklistUploadStatus !== "idle" && (
+                    <div
+                      data-ocid={
+                        checklistUploadStatus === "success"
+                          ? "checklist.success_state"
+                          : "checklist.error_state"
+                      }
+                      className="flex items-center gap-2 p-3 rounded-lg mb-4 text-sm"
+                      style={{
+                        background:
+                          checklistUploadStatus === "success"
+                            ? "oklch(0.45 0.120 145 / 0.15)"
+                            : "oklch(0.45 0.180 27 / 0.15)",
+                        border: `1px solid ${checklistUploadStatus === "success" ? "oklch(0.52 0.120 145 / 0.5)" : "oklch(0.52 0.170 27 / 0.5)"}`,
+                        color:
+                          checklistUploadStatus === "success"
+                            ? "oklch(0.75 0.130 145)"
+                            : "oklch(0.75 0.170 27)",
+                      }}
+                    >
+                      {checklistUploadStatus === "success" ? (
+                        <CheckCircle2 className="w-4 h-4 flex-shrink-0" />
+                      ) : (
+                        <AlertTriangle className="w-4 h-4 flex-shrink-0" />
+                      )}
+                      {checklistUploadMsg}
+                    </div>
+                  )}
+
+                  <Button
+                    data-ocid="admin.secondary_button"
+                    variant="outline"
+                    onClick={handleDownloadChecklistTemplate}
+                    className="flex items-center gap-2"
+                    style={{
+                      borderColor: "oklch(0.40 0.100 145 / 0.5)",
+                      color: "oklch(0.75 0.130 145)",
+                    }}
+                  >
+                    <Download className="w-4 h-4" />
+                    Download Checklist Template
+                  </Button>
+                </div>
+              </motion.div>
+            </TabsContent>
+
+            {/* MACHINES TAB */}
+            <TabsContent value="machines">
+              <motion.div
+                initial={{ opacity: 0, y: 10 }}
+                animate={{ opacity: 1, y: 0 }}
+              >
+                <div className="flex items-center justify-between mb-4">
+                  <div>
+                    <h2
+                      className="text-base font-semibold"
+                      style={{ fontFamily: "BricolageGrotesque, sans-serif" }}
+                    >
+                      Machine Master
+                    </h2>
+                    <p
+                      className="text-xs mt-0.5"
+                      style={{ color: "oklch(0.68 0.010 260)" }}
+                    >
+                      {machines.length} machine(s) in system
+                    </p>
+                  </div>
+                  <Button
+                    data-ocid="admin.primary_button"
+                    size="sm"
+                    onClick={() => setShowAddForm((v) => !v)}
+                    style={{
+                      background: "oklch(0.70 0.188 55)",
+                      color: "oklch(0.10 0.010 55)",
+                    }}
+                  >
+                    {showAddForm ? (
+                      <>
+                        <X className="w-3.5 h-3.5 mr-1" />
+                        Cancel
+                      </>
+                    ) : (
+                      <>
+                        <Plus className="w-3.5 h-3.5 mr-1" />
+                        Add Machine
+                      </>
+                    )}
+                  </Button>
+                </div>
+
+                {showAddForm && (
+                  <motion.div
+                    initial={{ opacity: 0, height: 0 }}
+                    animate={{ opacity: 1, height: "auto" }}
+                    className="industrial-card p-5 mb-4"
+                  >
+                    <h3 className="text-sm font-semibold mb-3">
+                      Add New Machine
+                    </h3>
+                    <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
+                      {(
+                        [
+                          ["id", "Machine ID", "CNC-006"],
+                          ["name", "Machine Name", "CNC Milling"],
+                          ["department", "Department", "Production"],
+                          ["location", "Location", "Shop Floor A"],
+                          ["machineType", "Type", "CNC"],
+                        ] as [keyof AddMachineForm, string, string][]
+                      ).map(([key, label, placeholder]) => (
+                        <div key={key}>
+                          <Label
+                            className="text-xs mb-1"
+                            style={{ color: "oklch(0.68 0.010 260)" }}
+                          >
+                            {label}
+                          </Label>
+                          <Input
+                            data-ocid="admin.input"
+                            placeholder={placeholder}
+                            value={newMachine[key]}
+                            onChange={(e) =>
+                              setNewMachine((prev) => ({
+                                ...prev,
+                                [key]: e.target.value,
+                              }))
+                            }
+                            className="h-8 text-sm"
+                            style={{
+                              background: "oklch(0.20 0.022 252)",
+                              borderColor: "oklch(0.34 0.030 252)",
+                            }}
+                          />
+                        </div>
+                      ))}
+                    </div>
+                    <Button
+                      data-ocid="admin.save_button"
+                      size="sm"
+                      className="mt-3"
+                      onClick={handleAddMachine}
+                      style={{
+                        background: "oklch(0.70 0.188 55)",
+                        color: "oklch(0.10 0.010 55)",
+                      }}
+                    >
+                      Save Machine
+                    </Button>
+                  </motion.div>
+                )}
+
+                <div className="industrial-card overflow-hidden">
+                  <Table>
+                    <TableHeader>
+                      <TableRow
+                        style={{ borderColor: "oklch(0.34 0.030 252)" }}
+                      >
+                        {["ID", "Name", "Department", "Location", "Type"].map(
+                          (h) => (
+                            <TableHead
+                              key={h}
+                              className="text-xs font-semibold"
+                              style={{ color: "oklch(0.68 0.010 260)" }}
+                            >
+                              {h}
+                            </TableHead>
+                          ),
+                        )}
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {machines.length === 0 ? (
+                        <TableRow>
+                          <TableCell
+                            colSpan={5}
+                            className="text-center py-8"
+                            style={{ color: "oklch(0.68 0.010 260)" }}
+                            data-ocid="machines.empty_state"
+                          >
+                            No machines found. Add one above or upload CSV.
+                          </TableCell>
+                        </TableRow>
+                      ) : (
+                        machines.map((m, idx) => (
+                          <TableRow
+                            key={m.id}
+                            data-ocid={`machines.row.${idx + 1}`}
+                            style={{ borderColor: "oklch(0.34 0.030 252)" }}
+                          >
+                            <TableCell
+                              className="text-sm font-mono font-semibold"
+                              style={{ color: "oklch(0.80 0.180 55)" }}
+                            >
+                              {m.id}
+                            </TableCell>
+                            <TableCell className="text-sm font-medium">
+                              {m.name}
+                            </TableCell>
+                            <TableCell
+                              className="text-sm"
+                              style={{ color: "oklch(0.68 0.010 260)" }}
+                            >
+                              {m.department}
+                            </TableCell>
+                            <TableCell
+                              className="text-sm"
+                              style={{ color: "oklch(0.68 0.010 260)" }}
+                            >
+                              {m.location}
+                            </TableCell>
+                            <TableCell>
+                              <span
+                                className="text-xs px-2 py-0.5 rounded-full"
+                                style={{
+                                  background: "oklch(0.50 0.065 232 / 0.2)",
+                                  color: "oklch(0.70 0.065 232)",
+                                  border:
+                                    "1px solid oklch(0.50 0.065 232 / 0.4)",
+                                }}
+                              >
+                                {m.machineType}
+                              </span>
+                            </TableCell>
+                          </TableRow>
+                        ))
+                      )}
+                    </TableBody>
+                  </Table>
+                </div>
+              </motion.div>
+            </TabsContent>
+
+            {/* CHECKLISTS TAB */}
+            <TabsContent value="checklists">
+              <motion.div
+                initial={{ opacity: 0, y: 10 }}
+                animate={{ opacity: 1, y: 0 }}
+              >
+                <div className="flex items-center justify-between mb-4">
+                  <h2
+                    className="text-base font-semibold"
+                    style={{ fontFamily: "BricolageGrotesque, sans-serif" }}
+                  >
+                    Checklist Templates ({checklistTemplates.length})
+                  </h2>
+                  <span
+                    className="text-xs"
+                    style={{ color: "oklch(0.55 0.010 260)" }}
+                  >
+                    Edit items inline, then click Save
+                  </span>
+                </div>
+                <div className="grid gap-4">
+                  {checklistTemplates.map(
+                    (tmpl: ChecklistTemplate, tIdx: number) => {
+                      const editing = editingTemplates[tmpl.id] ?? tmpl;
+                      const setEditing = (updated: ChecklistTemplate) =>
+                        setEditingTemplates((prev) => ({
+                          ...prev,
+                          [tmpl.id]: updated,
+                        }));
+                      return (
+                        <div
+                          key={tmpl.id}
+                          data-ocid={`checklists.item.${tIdx + 1}`}
+                          className="industrial-card p-4"
+                        >
+                          <div className="flex items-center justify-between mb-3">
+                            <div>
+                              <span className="text-sm font-semibold">
+                                {tmpl.id}
+                              </span>
+                              <span
+                                className="ml-2 text-xs px-2 py-0.5 rounded-full"
+                                style={{
+                                  background: "oklch(0.50 0.065 232 / 0.2)",
+                                  color: "oklch(0.70 0.065 232)",
+                                }}
+                              >
+                                {tmpl.machineType}
+                              </span>
+                            </div>
+                            <div className="flex items-center gap-2">
+                              <span
+                                className="text-xs"
+                                style={{ color: "oklch(0.68 0.010 260)" }}
+                              >
+                                {editing.items.length} items
+                              </span>
+                              <Button
+                                data-ocid={`checklists.save_button.${tIdx + 1}`}
+                                size="sm"
+                                onClick={() => {
+                                  updateChecklistTemplates([editing]);
+                                  setEditingTemplates((prev) => {
+                                    const next = { ...prev };
+                                    delete next[tmpl.id];
+                                    return next;
+                                  });
+                                  toast.success(
+                                    `Checklist "${tmpl.machineType}" saved`,
+                                  );
+                                }}
+                                className="h-7 text-xs px-3"
+                                style={{
+                                  background: "oklch(0.55 0.188 145)",
+                                  color: "white",
+                                }}
+                              >
+                                Save Changes
+                              </Button>
+                            </div>
+                          </div>
+                          <div className="space-y-2 mb-3">
+                            {editing.items.map(
+                              (item: ChecklistItem, iIdx: number) => (
+                                <div
+                                  key={item.id}
+                                  className="flex items-center gap-2"
+                                  style={{
+                                    borderTop:
+                                      iIdx > 0
+                                        ? "1px solid oklch(0.34 0.030 252 / 0.5)"
+                                        : undefined,
+                                    paddingTop: iIdx > 0 ? "6px" : undefined,
+                                  }}
+                                >
+                                  <span
+                                    className="w-5 h-5 rounded flex items-center justify-center text-xs font-bold flex-shrink-0"
+                                    style={{
+                                      background: "oklch(0.34 0.034 253)",
+                                      color: "oklch(0.68 0.010 260)",
+                                    }}
+                                  >
+                                    {iIdx + 1}
+                                  </span>
+                                  <Input
+                                    data-ocid={`checklists.input.${tIdx + 1}`}
+                                    value={item.description}
+                                    onChange={(e) => {
+                                      const updated = {
+                                        ...editing,
+                                        items: editing.items.map((it, i) =>
+                                          i === iIdx
+                                            ? {
+                                                ...it,
+                                                description: e.target.value,
+                                              }
+                                            : it,
+                                        ),
+                                      };
+                                      setEditing(updated);
+                                    }}
+                                    className="flex-1 h-7 text-xs"
+                                    style={{
+                                      background: "oklch(0.20 0.022 252)",
+                                      borderColor: "oklch(0.34 0.030 252)",
+                                    }}
+                                    placeholder="Item description"
+                                  />
+                                  <Select
+                                    value={item.itemType}
+                                    onValueChange={(val) => {
+                                      const updated = {
+                                        ...editing,
+                                        items: editing.items.map((it, i) =>
+                                          i === iIdx
+                                            ? {
+                                                ...it,
+                                                itemType:
+                                                  val as ChecklistItem["itemType"],
+                                              }
+                                            : it,
+                                        ),
+                                      };
+                                      setEditing(updated);
+                                    }}
+                                  >
+                                    <SelectTrigger
+                                      data-ocid={`checklists.select.${tIdx + 1}`}
+                                      className="w-36 h-7 text-xs"
+                                      style={{
+                                        background: "oklch(0.20 0.022 252)",
+                                        borderColor: "oklch(0.34 0.030 252)",
+                                      }}
+                                    >
+                                      <SelectValue />
+                                    </SelectTrigger>
+                                    <SelectContent
+                                      style={{
+                                        background: "oklch(0.22 0.022 252)",
+                                        borderColor: "oklch(0.34 0.030 252)",
+                                      }}
+                                    >
+                                      {[
+                                        "visual",
+                                        "measurement",
+                                        "lubrication",
+                                        "safety",
+                                        "cleaning",
+                                        "maintenance",
+                                      ].map((t) => (
+                                        <SelectItem
+                                          key={t}
+                                          value={t}
+                                          className="text-xs capitalize"
+                                        >
+                                          {t}
+                                        </SelectItem>
+                                      ))}
+                                    </SelectContent>
+                                  </Select>
+                                  <button
+                                    type="button"
+                                    data-ocid={`checklists.delete_button.${tIdx + 1}`}
+                                    onClick={() => {
+                                      const updated = {
+                                        ...editing,
+                                        items: editing.items.filter(
+                                          (_, i) => i !== iIdx,
+                                        ),
+                                      };
+                                      setEditing(updated);
+                                    }}
+                                    className="p-1 rounded hover:bg-red-500/10 transition-colors flex-shrink-0"
+                                    style={{ color: "oklch(0.65 0.170 27)" }}
+                                  >
+                                    <Trash2 className="w-3.5 h-3.5" />
+                                  </button>
+                                </div>
+                              ),
+                            )}
+                          </div>
+                          <Button
+                            data-ocid={`checklists.primary_button.${tIdx + 1}`}
+                            size="sm"
+                            variant="outline"
+                            onClick={() => {
+                              const newItem: ChecklistItem = {
+                                id: `item-${tmpl.id}-${Date.now()}`,
+                                description: "",
+                                itemType: "visual",
+                              };
+                              setEditing({
+                                ...editing,
+                                items: [...editing.items, newItem],
+                              });
+                            }}
+                            className="h-7 text-xs"
+                            style={{
+                              borderColor: "oklch(0.34 0.030 252)",
+                              color: "oklch(0.68 0.010 260)",
+                            }}
+                          >
+                            <Plus className="w-3 h-3 mr-1" /> Add Item
+                          </Button>
+                        </div>
+                      );
+                    },
+                  )}
+                </div>
+              </motion.div>
+            </TabsContent>
+
+            {/* RECORDS TAB */}
+            <TabsContent value="records">
+              <motion.div
+                initial={{ opacity: 0, y: 10 }}
+                animate={{ opacity: 1, y: 0 }}
+              >
+                <div className="flex items-center justify-between mb-4">
+                  <div>
+                    <h2
+                      className="text-base font-semibold"
+                      style={{ fontFamily: "BricolageGrotesque, sans-serif" }}
+                    >
+                      PM Records
+                    </h2>
+                    <p
+                      className="text-xs mt-0.5"
+                      style={{ color: "oklch(0.68 0.010 260)" }}
+                    >
+                      {pmRecords.length} total record(s)
+                    </p>
+                  </div>
+                  <Button
+                    data-ocid="admin.primary_button"
+                    size="sm"
+                    onClick={handleExportRecords}
+                    style={{
+                      background: "oklch(0.60 0.155 145)",
+                      color: "oklch(0.10 0.060 145)",
+                    }}
+                  >
+                    <Download className="w-3.5 h-3.5 mr-1.5" />
+                    Export CSV
+                  </Button>
+                </div>
+
+                <div className="industrial-card overflow-hidden">
+                  <Table>
+                    <TableHeader>
+                      <TableRow
+                        style={{ borderColor: "oklch(0.34 0.030 252)" }}
+                      >
+                        {[
+                          "Record ID",
+                          "Machine",
+                          "Operator",
+                          "Status",
+                          "Date",
+                          "Items",
+                        ].map((h) => (
+                          <TableHead
+                            key={h}
+                            className="text-xs font-semibold"
+                            style={{ color: "oklch(0.68 0.010 260)" }}
+                          >
+                            {h}
+                          </TableHead>
+                        ))}
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {pmRecords.length === 0 ? (
+                        <TableRow>
+                          <TableCell
+                            colSpan={6}
+                            className="text-center py-8"
+                            style={{ color: "oklch(0.68 0.010 260)" }}
+                            data-ocid="records.empty_state"
+                          >
+                            No PM records yet. Complete a checklist to see
+                            records here.
+                          </TableCell>
+                        </TableRow>
+                      ) : (
+                        pmRecords.map((r, idx) => (
+                          <TableRow
+                            key={r.id}
+                            data-ocid={`records.row.${idx + 1}`}
+                            style={{ borderColor: "oklch(0.34 0.030 252)" }}
+                          >
+                            <TableCell
+                              className="text-xs font-mono"
+                              style={{ color: "oklch(0.68 0.010 260)" }}
+                            >
+                              {r.id}
+                            </TableCell>
+                            <TableCell
+                              className="text-sm font-semibold"
+                              style={{ color: "oklch(0.80 0.180 55)" }}
+                            >
+                              {r.machineId}
+                            </TableCell>
+                            <TableCell className="text-sm">
+                              {r.operatorName}
+                            </TableCell>
+                            <TableCell>
+                              <span
+                                className={`text-xs font-semibold px-2 py-0.5 rounded-full ${r.status === "completed" ? "status-completed" : r.status.includes("issue") ? "status-pending" : "status-completed"}`}
+                              >
+                                {r.status}
+                              </span>
+                            </TableCell>
+                            <TableCell
+                              className="text-xs"
+                              style={{ color: "oklch(0.68 0.010 260)" }}
+                            >
+                              {new Date(
+                                Number(r.completedDate),
+                              ).toLocaleDateString("en-IN")}
+                            </TableCell>
+                            <TableCell className="text-sm">
+                              {r.checklistResults.length}
+                            </TableCell>
+                          </TableRow>
+                        ))
+                      )}
+                    </TableBody>
+                  </Table>
+                </div>
+              </motion.div>
+            </TabsContent>
+            {/* APPROVALS TAB */}
+            <TabsContent value="approvals">
+              <motion.div
+                initial={{ opacity: 0, y: 10 }}
+                animate={{ opacity: 1, y: 0 }}
+                className="industrial-card p-6"
+              >
+                <div className="flex items-center gap-2 mb-4">
+                  <Clock
+                    className="w-5 h-5"
+                    style={{ color: "oklch(0.80 0.180 55)" }}
+                  />
+                  <h2
+                    className="text-lg font-bold"
+                    style={{ fontFamily: "BricolageGrotesque, sans-serif" }}
+                  >
+                    Pending Approvals
+                  </h2>
+                  <Badge
+                    className="ml-1"
+                    style={{
+                      background: "oklch(0.62 0.220 25 / 0.20)",
+                      color: "oklch(0.75 0.200 25)",
+                      border: "1px solid oklch(0.62 0.220 25 / 0.4)",
+                    }}
+                  >
+                    {
+                      pmRecords.filter((r) => r.status === "pending-approval")
+                        .length
+                    }{" "}
+                    pending
+                  </Badge>
+                </div>
+
+                {pmRecords.filter((r) => r.status === "pending-approval")
+                  .length === 0 ? (
+                  <div
+                    data-ocid="approvals.empty_state"
+                    className="text-center py-16"
+                  >
+                    <CheckCircle2
+                      className="w-12 h-12 mx-auto mb-3"
+                      style={{ color: "oklch(0.75 0.130 145)" }}
+                    />
+                    <p className="font-semibold">No Pending Approvals</p>
+                    <p
+                      className="text-sm mt-1"
+                      style={{ color: "oklch(0.68 0.010 260)" }}
+                    >
+                      All submitted checklists have been reviewed.
+                    </p>
+                  </div>
+                ) : (
+                  <div className="overflow-x-auto">
+                    <Table>
+                      <TableHeader>
+                        <TableRow
+                          style={{ borderColor: "oklch(0.34 0.030 252)" }}
+                        >
+                          <TableHead style={{ color: "oklch(0.68 0.010 260)" }}>
+                            Machine
+                          </TableHead>
+                          <TableHead style={{ color: "oklch(0.68 0.010 260)" }}>
+                            Operator
+                          </TableHead>
+                          <TableHead style={{ color: "oklch(0.68 0.010 260)" }}>
+                            Submitted Date
+                          </TableHead>
+                          <TableHead style={{ color: "oklch(0.68 0.010 260)" }}>
+                            Items
+                          </TableHead>
+                          <TableHead style={{ color: "oklch(0.68 0.010 260)" }}>
+                            Actions
+                          </TableHead>
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {pmRecords
+                          .filter((r) => r.status === "pending-approval")
+                          .map((r, idx) => {
+                            const machine = machines.find(
+                              (m) => m.id === r.machineId,
+                            );
+                            return (
+                              <TableRow
+                                key={r.id}
+                                data-ocid={`approvals.row.${idx + 1}`}
+                                style={{ borderColor: "oklch(0.34 0.030 252)" }}
+                              >
+                                <TableCell
+                                  className="font-semibold"
+                                  style={{ color: "oklch(0.80 0.180 55)" }}
+                                >
+                                  {machine?.name ?? r.machineId}
+                                </TableCell>
+                                <TableCell className="text-sm">
+                                  {r.operatorName}
+                                </TableCell>
+                                <TableCell
+                                  className="text-xs"
+                                  style={{ color: "oklch(0.68 0.010 260)" }}
+                                >
+                                  {new Date(
+                                    Number(r.completedDate),
+                                  ).toLocaleDateString("en-IN")}
+                                </TableCell>
+                                <TableCell className="text-sm">
+                                  {r.checklistResults.length}
+                                </TableCell>
+                                <TableCell>
+                                  <div className="flex gap-2">
+                                    <button
+                                      type="button"
+                                      data-ocid={`approvals.confirm_button.${idx + 1}`}
+                                      onClick={() => {
+                                        const machineName =
+                                          machine?.name ?? r.machineId;
+                                        approveRecord(r.id);
+                                        toast.success(
+                                          `PM Approved for ${machineName}`,
+                                        );
+                                      }}
+                                      className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all hover:opacity-80"
+                                      style={{
+                                        background:
+                                          "oklch(0.45 0.120 145 / 0.20)",
+                                        border:
+                                          "1px solid oklch(0.52 0.120 145 / 0.5)",
+                                        color: "oklch(0.75 0.130 145)",
+                                      }}
+                                    >
+                                      <CheckCircle2 className="w-3.5 h-3.5" />{" "}
+                                      Approve
+                                    </button>
+                                    <button
+                                      type="button"
+                                      data-ocid={`approvals.delete_button.${idx + 1}`}
+                                      onClick={() => {
+                                        const machineName =
+                                          machine?.name ?? r.machineId;
+                                        rejectRecord(r.id);
+                                        toast.error(
+                                          `PM Rejected for ${machineName}`,
+                                        );
+                                      }}
+                                      className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all hover:opacity-80"
+                                      style={{
+                                        background:
+                                          "oklch(0.45 0.180 27 / 0.20)",
+                                        border:
+                                          "1px solid oklch(0.52 0.170 27 / 0.5)",
+                                        color: "oklch(0.75 0.170 27)",
+                                      }}
+                                    >
+                                      <AlertTriangle className="w-3.5 h-3.5" />{" "}
+                                      Reject
+                                    </button>
+                                  </div>
+                                </TableCell>
+                              </TableRow>
+                            );
+                          })}
+                      </TableBody>
+                    </Table>
+                  </div>
+                )}
+              </motion.div>
+            </TabsContent>
+
+            {/* YEARLY PLAN TAB */}
+            <TabsContent value="yearly-plan">
+              <motion.div
+                initial={{ opacity: 0, y: 10 }}
+                animate={{ opacity: 1, y: 0 }}
+              >
+                <div className="flex items-center justify-between mb-4">
+                  <h2
+                    className="text-lg font-bold flex items-center gap-2"
+                    style={{ color: "oklch(0.88 0.010 260)" }}
+                  >
+                    <Calendar
+                      className="w-5 h-5"
+                      style={{ color: "oklch(0.70 0.188 55)" }}
+                    />
+                    Yearly PM Plan — {currentYear}
+                  </h2>
+                  <span
+                    className="text-xs"
+                    style={{ color: "oklch(0.55 0.010 260)" }}
+                  >
+                    Click any cell to edit
+                  </span>
+                </div>
+                <div
+                  className="overflow-x-auto rounded-lg border"
+                  style={{ borderColor: "oklch(0.34 0.030 252)" }}
+                >
+                  <table
+                    className="w-full text-sm border-collapse"
+                    style={{ minWidth: "900px" }}
+                  >
+                    <thead>
+                      <tr style={{ background: "oklch(0.22 0.022 252)" }}>
+                        <th
+                          className="py-3 px-3 text-left font-semibold sticky left-0 z-10"
+                          style={{
+                            background: "oklch(0.22 0.022 252)",
+                            color: "oklch(0.70 0.010 260)",
+                            borderBottom: "1px solid oklch(0.34 0.030 252)",
+                            minWidth: "160px",
+                          }}
+                        >
+                          Machine
+                        </th>
+                        {MONTHS.map((m, i) => (
+                          <th
+                            key={m}
+                            className="py-3 px-2 text-center font-semibold"
+                            style={{
+                              background:
+                                i + 1 === currentMonth
+                                  ? "oklch(0.26 0.040 252)"
+                                  : "oklch(0.22 0.022 252)",
+                              color:
+                                i + 1 === currentMonth
+                                  ? "oklch(0.70 0.188 55)"
+                                  : "oklch(0.70 0.010 260)",
+                              borderBottom: "1px solid oklch(0.34 0.030 252)",
+                              borderLeft: "1px solid oklch(0.28 0.025 252)",
+                              minWidth: "80px",
+                            }}
+                          >
+                            {m}
+                          </th>
+                        ))}
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {machines.map((machine, rowIdx) => (
+                        <tr
+                          key={machine.id}
+                          data-ocid={`yearly.row.${rowIdx + 1}`}
+                          style={{
+                            borderBottom: "1px solid oklch(0.28 0.025 252)",
+                          }}
+                        >
+                          <td
+                            className="py-2 px-3 font-medium sticky left-0 z-10"
+                            style={{
+                              background: "oklch(0.19 0.020 255)",
+                              color: "oklch(0.85 0.010 260)",
+                              borderRight: "1px solid oklch(0.28 0.025 252)",
+                            }}
+                          >
+                            <div className="font-semibold text-xs">
+                              {machine.name}
+                            </div>
+                            <div
+                              className="text-xs mt-0.5"
+                              style={{ color: "oklch(0.55 0.010 260)" }}
+                            >
+                              {machine.department}
+                            </div>
+                          </td>
+                          {MONTHS.map((m, i) => {
+                            const month = i + 1;
+                            const plan = pmPlans.find(
+                              (p) =>
+                                p.machineId === machine.id &&
+                                Number(p.month) === month,
+                            );
+                            const isCurrentMonth = month === currentMonth;
+                            return (
+                              <td
+                                key={m}
+                                className="py-2 px-1 text-center cursor-pointer transition-colors"
+                                data-ocid={`yearly.item.${rowIdx + 1}`}
+                                style={{
+                                  background: isCurrentMonth
+                                    ? "oklch(0.21 0.028 252)"
+                                    : "oklch(0.185 0.018 255)",
+                                  borderLeft: "1px solid oklch(0.28 0.025 252)",
+                                }}
+                              >
+                                <button
+                                  type="button"
+                                  className="w-full h-full min-h-[40px] flex flex-col items-center justify-center"
+                                  onClick={() =>
+                                    openCellEdit(machine.id, month)
+                                  }
+                                  style={{
+                                    background: "transparent",
+                                    border: "none",
+                                    cursor: "pointer",
+                                  }}
+                                >
+                                  {plan ? (
+                                    <div className="flex flex-col items-center gap-0.5">
+                                      <span
+                                        className="text-xs font-bold px-1.5 py-0.5 rounded"
+                                        style={{
+                                          background: "oklch(0.32 0.12 145)",
+                                          color: "oklch(0.88 0.10 145)",
+                                        }}
+                                      >
+                                        {plan.frequency.charAt(0)}
+                                      </span>
+                                      {plan.scheduledDate && (
+                                        <span
+                                          className="text-[10px]"
+                                          style={{
+                                            color: "oklch(0.60 0.010 260)",
+                                          }}
+                                        >
+                                          {`${new Date(`${plan.scheduledDate}T00:00:00`).getDate()} ${m}`}
+                                        </span>
+                                      )}
+                                    </div>
+                                  ) : (
+                                    <span
+                                      style={{ color: "oklch(0.38 0.010 260)" }}
+                                    >
+                                      —
+                                    </span>
+                                  )}
+                                </button>
+                              </td>
+                            );
+                          })}
+                        </tr>
+                      ))}
+                      {machines.length === 0 && (
+                        <tr>
+                          <td
+                            colSpan={13}
+                            className="py-8 text-center text-sm"
+                            style={{ color: "oklch(0.55 0.010 260)" }}
+                          >
+                            No machines found. Add machines first.
+                          </td>
+                        </tr>
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+                {/* Legend */}
+                <div
+                  className="flex items-center gap-4 mt-3 text-xs"
+                  style={{ color: "oklch(0.60 0.010 260)" }}
+                >
+                  <span className="flex items-center gap-1">
+                    <span
+                      className="w-4 h-4 rounded inline-block"
+                      style={{ background: "oklch(0.32 0.12 145)" }}
+                    />
+                    Planned (M=Monthly, Q=Quarterly, H=Half-Yearly, Y=Yearly)
+                  </span>
+                  <span className="flex items-center gap-1">
+                    <span
+                      className="w-5 text-center font-bold"
+                      style={{ color: "oklch(0.70 0.188 55)" }}
+                    >
+                      Col
+                    </span>
+                    Current month
+                  </span>
+                </div>
+              </motion.div>
+            </TabsContent>
+
+            {/* USERS TAB */}
+            <TabsContent value="users">
+              <UsersTab
+                currentUser={user}
+                getUsers={getUsers}
+                createUser={createUser}
+                updateUser={updateUser}
+                deleteUser={deleteUser}
+              />
+            </TabsContent>
+          </Tabs>
+        </main>
+
+        {/* Yearly Plan Cell Edit Dialog */}
+        <Dialog
+          open={!!editCell}
+          onOpenChange={(open) => !open && setEditCell(null)}
+        >
+          <DialogContent
+            className="max-w-sm"
+            style={{
+              background: "oklch(0.22 0.022 252)",
+              border: "1px solid oklch(0.34 0.030 252)",
+              color: "oklch(0.88 0.010 260)",
+            }}
+          >
+            <DialogHeader>
+              <DialogTitle style={{ color: "oklch(0.88 0.010 260)" }}>
+                Edit PM Plan —{" "}
+                {editCell ? `${MONTHS[editCell.month - 1]} ${currentYear}` : ""}
+              </DialogTitle>
+            </DialogHeader>
+            {editCell && (
+              <div className="space-y-4 mt-2">
+                <div
+                  className="text-sm font-medium"
+                  style={{ color: "oklch(0.70 0.188 55)" }}
+                >
+                  {machines.find((m) => m.id === editCell.machineId)?.name ||
+                    editCell.machineId}
+                </div>
+                <div className="flex items-center gap-3">
+                  <Checkbox
+                    id="pm-enabled"
+                    checked={editEnabled}
+                    onCheckedChange={(v) => setEditEnabled(!!v)}
+                    data-ocid="yearly.checkbox"
+                  />
+                  <Label
+                    htmlFor="pm-enabled"
+                    className="text-sm cursor-pointer"
+                    style={{ color: "oklch(0.80 0.010 260)" }}
+                  >
+                    Enable PM this month
+                  </Label>
+                </div>
+                {editEnabled && (
+                  <>
+                    <div className="space-y-1.5">
+                      <Label
+                        className="text-xs"
+                        style={{ color: "oklch(0.65 0.010 260)" }}
+                      >
+                        Scheduled Date
+                      </Label>
+                      <Input
+                        type="date"
+                        value={editDate}
+                        onChange={(e) => setEditDate(e.target.value)}
+                        data-ocid="yearly.input"
+                        min={`${currentYear}-${String(editCell.month).padStart(2, "0")}-01`}
+                        max={`${currentYear}-${String(editCell.month).padStart(2, "0")}-${new Date(currentYear, editCell.month, 0).getDate()}`}
+                        style={{
+                          background: "oklch(0.19 0.020 255)",
+                          borderColor: "oklch(0.34 0.030 252)",
+                          color: "oklch(0.88 0.010 260)",
+                        }}
+                      />
+                    </div>
+                    <div className="space-y-1.5">
+                      <Label
+                        className="text-xs"
+                        style={{ color: "oklch(0.65 0.010 260)" }}
+                      >
+                        Frequency
+                      </Label>
+                      <Select
+                        value={editFrequency}
+                        onValueChange={setEditFrequency}
+                      >
+                        <SelectTrigger
+                          data-ocid="yearly.select"
+                          style={{
+                            background: "oklch(0.19 0.020 255)",
+                            borderColor: "oklch(0.34 0.030 252)",
+                            color: "oklch(0.88 0.010 260)",
+                          }}
+                        >
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent
+                          style={{
+                            background: "oklch(0.22 0.022 252)",
+                            borderColor: "oklch(0.34 0.030 252)",
+                          }}
+                        >
+                          <SelectItem value="Monthly">Monthly</SelectItem>
+                          <SelectItem value="Quarterly">Quarterly</SelectItem>
+                          <SelectItem value="Half-Yearly">
+                            Half-Yearly
+                          </SelectItem>
+                          <SelectItem value="Yearly">Yearly</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+                  </>
+                )}
+                <div className="flex gap-2 pt-2">
+                  <Button
+                    onClick={saveCellEdit}
+                    data-ocid="yearly.save_button"
+                    className="flex-1 text-sm"
+                    style={{
+                      background: "oklch(0.55 0.188 145)",
+                      color: "white",
+                    }}
+                  >
+                    Save
+                  </Button>
+                  <Button
+                    variant="outline"
+                    onClick={() => setEditCell(null)}
+                    data-ocid="yearly.cancel_button"
+                    className="flex-1 text-sm"
+                    style={{
+                      borderColor: "oklch(0.34 0.030 252)",
+                      color: "oklch(0.80 0.010 260)",
+                    }}
+                  >
+                    Cancel
+                  </Button>
+                </div>
+              </div>
+            )}
+          </DialogContent>
+        </Dialog>
+
+        <footer
+          className="border-t py-4"
+          style={{
+            background: "oklch(0.19 0.020 255)",
+            borderColor: "oklch(0.34 0.030 252)",
+          }}
+        >
+          <div className="max-w-7xl mx-auto px-4 flex items-center justify-between">
+            <p className="text-xs" style={{ color: "oklch(0.50 0.010 260)" }}>
+              © {new Date().getFullYear()} PM Tracker Admin Panel
+            </p>
+            <p className="text-xs" style={{ color: "oklch(0.50 0.010 260)" }}>
+              Built with ❤ using{" "}
+              <a
+                href={`https://caffeine.ai?utm_source=caffeine-footer&utm_medium=referral&utm_content=${encodeURIComponent(typeof window !== "undefined" ? window.location.hostname : "")}`}
+                target="_blank"
+                rel="noopener noreferrer"
+                style={{ color: "oklch(0.70 0.188 55)" }}
+              >
+                caffeine.ai
+              </a>
+            </p>
+          </div>
+        </footer>
+      </div>
+    </>
+  );
+}
