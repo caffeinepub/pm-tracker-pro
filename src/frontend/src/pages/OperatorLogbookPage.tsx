@@ -58,6 +58,7 @@ type ActivityRow = {
   timeSpent: string;
   status: string;
   remarks: string;
+  photo: string;
 };
 
 type ItemFormState = {
@@ -76,13 +77,13 @@ const ITEM_CATEGORIES = [
 ];
 
 const CATEGORY_COLORS: Record<string, string> = {
-  Safety: "oklch(0.85 0.17 27)",
-  Quality: "oklch(0.82 0.13 145)",
-  Housekeeping: "oklch(0.84 0.14 195)",
-  Equipment: "oklch(0.82 0.15 232)",
-  Production: "oklch(0.88 0.16 55)",
-  Maintenance: "oklch(0.80 0.14 290)",
-  Other: "oklch(0.75 0.010 260)",
+  Safety: "oklch(0.50 0.20 27)",
+  Quality: "oklch(0.45 0.16 145)",
+  Housekeeping: "oklch(0.48 0.16 195)",
+  Equipment: "oklch(0.48 0.18 232)",
+  Production: "oklch(0.52 0.18 55)",
+  Maintenance: "oklch(0.48 0.17 290)",
+  Other: "oklch(0.45 0.04 260)",
 };
 
 const ACTIVITY_STATUSES = ["Completed", "In Progress", "Pending"];
@@ -166,10 +167,11 @@ function printLogbookEntry(entry: LogbookEntry) {
             <td style="border:1px solid #ccc;padding:6px 8px;text-align:center;">${act.timeSpent || "—"}</td>
             <td style="border:1px solid #ccc;padding:6px 8px;text-align:center;">${act.status}</td>
             <td style="border:1px solid #ccc;padding:6px 8px;">${act.remarks || "—"}</td>
+            <td style="border:1px solid #ccc;padding:6px 8px;text-align:center;">${(act as any).photo ? `<img src="${(act as any).photo}" style="max-width:60px;max-height:60px;object-fit:cover;border-radius:4px;" />` : "—"}</td>
           </tr>`,
           )
           .join("")
-      : `<tr><td colspan="5" style="border:1px solid #ccc;padding:8px;text-align:center;color:#888;">No additional activities recorded</td></tr>`;
+      : `<tr><td colspan="6" style="border:1px solid #ccc;padding:8px;text-align:center;color:#888;">No additional activities recorded</td></tr>`;
 
   const html = `<!DOCTYPE html>
 <html lang="en">
@@ -245,6 +247,7 @@ function printLogbookEntry(entry: LogbookEntry) {
         <th style="width:70px;text-align:center;">Time (hrs)</th>
         <th style="width:80px;text-align:center;">Status</th>
         <th>Remarks</th>
+        <th style="width:70px;text-align:center;">Photo</th>
       </tr>
     </thead>
     <tbody>${activityRows}</tbody>
@@ -384,6 +387,7 @@ export default function OperatorLogbookPage() {
         timeSpent: "",
         status: "Completed",
         remarks: "",
+        photo: "",
       },
     ]);
   }
@@ -400,6 +404,15 @@ export default function OperatorLogbookPage() {
 
   function removeActivity(id: string) {
     setActivities((prev) => prev.filter((a) => a.id !== id));
+  }
+
+  function handleActivityPhotoUpload(actId: string, file: File) {
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      const dataUrl = e.target?.result as string;
+      updateActivity(actId, "photo", dataUrl);
+    };
+    reader.readAsDataURL(file);
   }
 
   // ─── Submit ───────────────────────────────────────────────────────────────
@@ -870,14 +883,12 @@ export default function OperatorLogbookPage() {
                             <TableCell>
                               <Badge
                                 style={{
-                                  background: `${CATEGORY_COLORS[item.category] || CATEGORY_COLORS.Other}22`,
-                                  color:
+                                  background:
                                     CATEGORY_COLORS[item.category] ||
                                     CATEGORY_COLORS.Other,
-                                  border: `1px solid ${
-                                    CATEGORY_COLORS[item.category] ||
-                                    CATEGORY_COLORS.Other
-                                  }44`,
+                                  color: "white",
+                                  border: "none",
+                                  fontWeight: 600,
                                   fontSize: "10px",
                                 }}
                               >
@@ -1038,14 +1049,12 @@ export default function OperatorLogbookPage() {
                           <div className="flex items-start gap-3 mb-2">
                             <Badge
                               style={{
-                                background: `${CATEGORY_COLORS[ci.category] || CATEGORY_COLORS.Other}22`,
-                                color:
+                                background:
                                   CATEGORY_COLORS[ci.category] ||
                                   CATEGORY_COLORS.Other,
-                                border: `1px solid ${
-                                  CATEGORY_COLORS[ci.category] ||
-                                  CATEGORY_COLORS.Other
-                                }44`,
+                                color: "white",
+                                border: "none",
+                                fontWeight: 600,
                                 fontSize: "9px",
                                 minWidth: "fit-content",
                               }}
@@ -1368,6 +1377,61 @@ export default function OperatorLogbookPage() {
                               style={inputStyle}
                               data-ocid="logbook.input"
                             />
+                          </div>
+                          {/* Photo Upload */}
+                          <div className="sm:col-span-4">
+                            <Label style={{ ...labelStyle, fontSize: "10px" }}>
+                              Photo
+                            </Label>
+                            <div className="mt-1 flex items-center gap-2">
+                              {act.photo ? (
+                                <div className="relative">
+                                  <img
+                                    src={act.photo}
+                                    alt="Activity"
+                                    className="w-16 h-16 object-cover rounded border"
+                                    style={{
+                                      border: "1px solid oklch(0.34 0.030 252)",
+                                    }}
+                                  />
+                                  <button
+                                    type="button"
+                                    onClick={() =>
+                                      updateActivity(act.id, "photo", "")
+                                    }
+                                    className="absolute -top-1 -right-1 rounded-full p-0.5"
+                                    style={{
+                                      background: "oklch(0.50 0.20 27)",
+                                      color: "#fff",
+                                    }}
+                                  >
+                                    <X className="w-3 h-3" />
+                                  </button>
+                                </div>
+                              ) : (
+                                <label
+                                  className="flex items-center gap-1.5 cursor-pointer rounded px-3 py-1.5 text-xs"
+                                  style={{
+                                    background: "oklch(0.24 0.025 255)",
+                                    border: "1px dashed oklch(0.42 0.030 252)",
+                                    color: "oklch(0.65 0.010 260)",
+                                  }}
+                                >
+                                  <Camera className="w-3.5 h-3.5" />
+                                  Upload Photo
+                                  <input
+                                    type="file"
+                                    accept="image/*"
+                                    className="hidden"
+                                    onChange={(e) => {
+                                      const file = e.target.files?.[0];
+                                      if (file)
+                                        handleActivityPhotoUpload(act.id, file);
+                                    }}
+                                  />
+                                </label>
+                              )}
+                            </div>
                           </div>
                         </div>
                       </motion.div>

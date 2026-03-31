@@ -204,6 +204,75 @@ export default function PreventivePage() {
     (r) => r.status === "pending-approval",
   );
 
+  // Operators are not allowed to access the Preventive Maintenance panel
+  if (user?.role !== "admin") {
+    return (
+      <div
+        className="min-h-screen flex flex-col items-center justify-center"
+        style={{ background: "oklch(0.165 0.022 252)" }}
+      >
+        <div
+          className="rounded-2xl border p-10 flex flex-col items-center gap-4 max-w-sm w-full text-center shadow-xl"
+          style={{
+            background: "oklch(0.20 0.022 252)",
+            borderColor: "oklch(0.30 0.022 252)",
+          }}
+        >
+          <div
+            className="rounded-full flex items-center justify-center w-16 h-16 mb-2"
+            style={{ background: "oklch(0.28 0.15 25)" }}
+          >
+            <svg
+              xmlns="http://www.w3.org/2000/svg"
+              width="32"
+              height="32"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="oklch(0.75 0.18 25)"
+              strokeWidth="2"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              role="img"
+              aria-label="Access Denied"
+            >
+              <title>Access Denied</title>
+              <circle cx="12" cy="12" r="10" />
+              <line x1="4.93" y1="4.93" x2="19.07" y2="19.07" />
+            </svg>
+          </div>
+          <h2
+            className="text-2xl font-bold"
+            style={{ color: "oklch(0.92 0.010 260)" }}
+          >
+            Access Denied
+          </h2>
+          <p className="text-sm" style={{ color: "oklch(0.60 0.010 260)" }}>
+            You do not have permission to access the Preventive Maintenance
+            panel.
+          </p>
+          <p className="text-sm" style={{ color: "oklch(0.60 0.010 260)" }}>
+            To submit a PM check sheet, click on a machine name in{" "}
+            <strong style={{ color: "oklch(0.80 0.180 55)" }}>
+              Today's Maintenance Schedule
+            </strong>{" "}
+            on the Dashboard.
+          </p>
+          <button
+            type="button"
+            onClick={() => navigate("dashboard")}
+            className="mt-2 px-6 py-2 rounded-lg font-semibold text-sm"
+            style={{
+              background: "oklch(0.55 0.18 250)",
+              color: "oklch(0.98 0.005 260)",
+            }}
+          >
+            Go to Dashboard
+          </button>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <>
       <MorningPopup />
