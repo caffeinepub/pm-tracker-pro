@@ -68,6 +68,13 @@ export interface BreakdownRecord {
   adminRemarks?: string;
   submittedAt: number;
   photoDataUrl?: string;
+  spareUsed?: Array<{
+    spareName: string;
+    partSpec?: string;
+    qty: number;
+    unit: string;
+    cost: number;
+  }>;
 }
 
 export interface CAPARecord {
@@ -247,6 +254,40 @@ export interface LogbookEntry {
     status: string;
     remarks: string;
   }>;
+  spareUsed?: Array<{
+    spareName: string;
+    qty: number;
+    cost: number;
+  }>;
+}
+
+export interface SpareItem {
+  id: string;
+  partName: string;
+  partSpec: string;
+  qtyInStock: number;
+  minStockLevel: number;
+  unit: string;
+  costPerUnit: number;
+  applicableMachineSection: string;
+  createdAt: number;
+}
+
+export interface PMSpareUsage {
+  id: string;
+  machineId: string;
+  machineName: string;
+  date: string;
+  spareUsed: Array<{
+    spareName: string;
+    partSpec?: string;
+    qty: number;
+    unit: string;
+    cost: number;
+  }>;
+  submittedBy: string;
+  submittedByUsername: string;
+  workType: "PM" | "Predictive" | "Logbook";
 }
 
 const DEFAULT_BD_TARGETS: BDTargets = {
@@ -273,6 +314,8 @@ const ELECTRICITY_METERS_KEY = "pm_tracker_electricity_meters";
 const METER_READINGS_KEY = "pm_tracker_meter_readings";
 const LOGBOOK_ITEMS_KEY = "pm_tracker_logbook_items";
 const LOGBOOK_ENTRIES_KEY = "pm_tracker_logbook_entries";
+const SPARES_KEY = "pm_tracker_spares";
+const PM_SPARE_USAGE_KEY = "pm_tracker_pm_spare_usage";
 
 const DEFAULT_SECTION_HOURS: SectionHoursConfig[] = [
   { section: "Powder Coating", availableProductionHrs: 2000, powerOff: 0 },
@@ -413,6 +456,14 @@ type AppContextType = {
   ) => void;
   deleteLogbookCheckItem: (id: string) => void;
   submitLogbookEntry: (entry: LogbookEntry) => void;
+  // Spares
+  spareItems: SpareItem[];
+  addSpareItem: (item: SpareItem) => void;
+  updateSpareItem: (id: string, updates: Partial<SpareItem>) => void;
+  deleteSpareItem: (id: string) => void;
+  importSpareItems: (items: SpareItem[]) => void;
+  pmSpareUsage: PMSpareUsage[];
+  addPMSpareUsage: (usage: PMSpareUsage) => void;
 };
 
 export type PageName =
@@ -430,7 +481,8 @@ export type PageName =
   | "kaizen"
   | "predictive"
   | "electricity"
-  | "logbook";
+  | "logbook"
+  | "spares";
 
 export interface NavParams {
   machineId?: string;
@@ -700,6 +752,33 @@ export function AppProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     localStorage.setItem(LOGBOOK_ENTRIES_KEY, JSON.stringify(logbookEntries));
   }, [logbookEntries]);
+  const [spareItems, setSpareItems] = useState<SpareItem[]>(() => {
+    try {
+      const r = localStorage.getItem(SPARES_KEY);
+      if (r) {
+        const parsed = JSON.parse(r);
+        return Array.isArray(parsed) ? parsed : [];
+      }
+    } catch {}
+    return [];
+  });
+  const [pmSpareUsage, setPmSpareUsage] = useState<PMSpareUsage[]>(() => {
+    try {
+      const r = localStorage.getItem(PM_SPARE_USAGE_KEY);
+      if (r) {
+        const parsed = JSON.parse(r);
+        return Array.isArray(parsed) ? parsed : [];
+      }
+    } catch {}
+    return [];
+  });
+
+  useEffect(() => {
+    localStorage.setItem(SPARES_KEY, JSON.stringify(spareItems));
+  }, [spareItems]);
+  useEffect(() => {
+    localStorage.setItem(PM_SPARE_USAGE_KEY, JSON.stringify(pmSpareUsage));
+  }, [pmSpareUsage]);
 
   const login = useCallback((username: string, password: string): boolean => {
     const users = loadUsers();
@@ -1333,6 +1412,31 @@ export function AppProvider({ children }: { children: ReactNode }) {
     ]);
   }, []);
 
+  const addSpareItem = useCallback((item: SpareItem) => {
+    setSpareItems((prev) => [...prev, item]);
+  }, []);
+
+  const updateSpareItem = useCallback(
+    (id: string, updates: Partial<SpareItem>) => {
+      setSpareItems((prev) =>
+        prev.map((s) => (s.id === id ? { ...s, ...updates } : s)),
+      );
+    },
+    [],
+  );
+
+  const deleteSpareItem = useCallback((id: string) => {
+    setSpareItems((prev) => prev.filter((s) => s.id !== id));
+  }, []);
+
+  const importSpareItems = useCallback((items: SpareItem[]) => {
+    setSpareItems((prev) => [...prev, ...items]);
+  }, []);
+
+  const addPMSpareUsage = useCallback((usage: PMSpareUsage) => {
+    setPmSpareUsage((prev) => [...prev, usage]);
+  }, []);
+
   return (
     <AppContext.Provider
       value={{
@@ -1414,6 +1518,13 @@ export function AppProvider({ children }: { children: ReactNode }) {
         updateLogbookCheckItem,
         deleteLogbookCheckItem,
         submitLogbookEntry,
+        spareItems,
+        addSpareItem,
+        updateSpareItem,
+        deleteSpareItem,
+        importSpareItems,
+        pmSpareUsage,
+        addPMSpareUsage,
       }}
     >
       {children}

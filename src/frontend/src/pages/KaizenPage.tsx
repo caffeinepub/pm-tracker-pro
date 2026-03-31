@@ -359,20 +359,28 @@ export default function KaizenPage() {
       <MorningPopup />
       <style>{`
         @media print {
-          body > * { display: none !important; }
-          #kaizen-print-area { display: block !important; }
-          @page { size: A4; margin: 15mm; }
+          body * { visibility: hidden !important; }
+          #kaizen-slip-print, #kaizen-slip-print * { visibility: visible !important; }
+          #kaizen-slip-print { position: fixed; top: 0; left: 0; width: 100%; }
+          @page { size: A4; margin: 10mm; }
         }
       `}</style>
 
       {/* Print Area — hidden except when printing */}
       <div
-        id="kaizen-print-area"
+        id="kaizen-slip-print"
         style={{
-          display: "none",
+          position: "fixed",
+          top: 0,
+          left: 0,
+          width: "100%",
+          zIndex: -9999,
+          pointerEvents: "none",
           fontFamily: "Arial, sans-serif",
           color: "#000",
           background: "#fff",
+          padding: "10mm",
+          boxSizing: "border-box",
         }}
       >
         {viewSlip && (

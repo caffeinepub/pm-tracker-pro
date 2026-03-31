@@ -15,7 +15,7 @@ import {
   XCircle,
 } from "lucide-react";
 import { AnimatePresence, motion } from "motion/react";
-import { useMemo, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 import type { ChecklistResult } from "../backend";
 import { useApp } from "../context/AppContext";
@@ -38,6 +38,8 @@ export default function ChecklistPage() {
     navParams,
     isMachineCompleted,
     pmRecords,
+    spareItems,
+    addPMSpareUsage,
   } = useApp();
 
   const machine = useMemo(
@@ -61,6 +63,15 @@ export default function ChecklistPage() {
   });
 
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [spareRows, setSpareRows] = useState<
+    Array<{
+      spareName: string;
+      partSpec: string;
+      qty: number;
+      unit: string;
+      cost: number;
+    }>
+  >([]);
   const [submitted, setSubmitted] = useState(false);
   const [resubmitting, setResubmitting] = useState(false);
 
@@ -151,6 +162,19 @@ export default function ChecklistPage() {
       checklistResults: results,
     });
 
+    if (spareRows.length > 0) {
+      addPMSpareUsage({
+        id: `pm-spare-${Date.now()}`,
+        machineId: machine.id,
+        machineName: machine.name,
+        date: new Date().toISOString().split("T")[0],
+        spareUsed: spareRows,
+        submittedBy: user?.name ?? "",
+        submittedByUsername: user?.username ?? "",
+        workType: "PM",
+      });
+    }
+    setSpareRows([]);
     setIsSubmitting(false);
     setSubmitted(true);
     setResubmitting(false);
@@ -770,6 +794,179 @@ export default function ChecklistPage() {
                 </motion.div>
               );
             })}
+
+            {/* Spares Used */}
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              transition={{ delay: 0.35 }}
+              className="pt-1 pb-2"
+            >
+              <div className="flex items-center justify-between mb-2">
+                <span
+                  className="text-xs font-semibold"
+                  style={{ color: "oklch(0.65 0.010 260)" }}
+                >
+                  Spares Used (Optional)
+                </span>
+                <button
+                  type="button"
+                  onClick={() =>
+                    setSpareRows((prev) => [
+                      ...prev,
+                      {
+                        spareName: "",
+                        partSpec: "",
+                        qty: 1,
+                        unit: "Nos",
+                        cost: 0,
+                      },
+                    ])
+                  }
+                  className="text-xs px-2 py-1 rounded"
+                  style={{
+                    background: "oklch(0.48 0.13 200 / 0.15)",
+                    color: "oklch(0.70 0.14 200)",
+                    border: "1px solid oklch(0.48 0.13 200 / 0.35)",
+                  }}
+                >
+                  + Add Spare
+                </button>
+              </div>
+              {spareRows.map((row, i) => (
+                <div
+                  // biome-ignore lint/suspicious/noArrayIndexKey: user-added spare row
+                  key={i}
+                  className="grid grid-cols-12 gap-1 mb-1 items-center"
+                >
+                  <div className="col-span-4">
+                    <input
+                      list={`spare-names-cl-${i}`}
+                      value={row.spareName}
+                      onChange={(e) => {
+                        const val = e.target.value;
+                        const found = spareItems.find(
+                          (s) => s.partName === val,
+                        );
+                        setSpareRows((prev) =>
+                          prev.map((r, j) =>
+                            j === i
+                              ? {
+                                  ...r,
+                                  spareName: val,
+                                  partSpec: found?.partSpec ?? r.partSpec,
+                                  unit: found?.unit ?? r.unit,
+                                  cost: found
+                                    ? found.costPerUnit * r.qty
+                                    : r.cost,
+                                }
+                              : r,
+                          ),
+                        );
+                      }}
+                      placeholder="Part name"
+                      className="w-full px-2 py-1 text-xs rounded border"
+                      style={{
+                        background: "oklch(0.17 0.018 255)",
+                        borderColor: "oklch(0.28 0.025 252)",
+                        color: "oklch(0.88 0.010 260)",
+                      }}
+                    />
+                    <datalist id={`spare-names-cl-${i}`}>
+                      {spareItems.map((s) => (
+                        <option key={s.id} value={s.partName} />
+                      ))}
+                    </datalist>
+                  </div>
+                  <div className="col-span-2">
+                    <input
+                      type="number"
+                      min={0}
+                      value={row.qty}
+                      onChange={(e) => {
+                        const qty = Number(e.target.value);
+                        const found = spareItems.find(
+                          (s) => s.partName === row.spareName,
+                        );
+                        setSpareRows((prev) =>
+                          prev.map((r, j) =>
+                            j === i
+                              ? {
+                                  ...r,
+                                  qty,
+                                  cost: found
+                                    ? found.costPerUnit * qty
+                                    : r.cost,
+                                }
+                              : r,
+                          ),
+                        );
+                      }}
+                      placeholder="Qty"
+                      className="w-full px-2 py-1 text-xs rounded border"
+                      style={{
+                        background: "oklch(0.17 0.018 255)",
+                        borderColor: "oklch(0.28 0.025 252)",
+                        color: "oklch(0.88 0.010 260)",
+                      }}
+                    />
+                  </div>
+                  <div className="col-span-2">
+                    <input
+                      value={row.unit}
+                      onChange={(e) =>
+                        setSpareRows((prev) =>
+                          prev.map((r, j) =>
+                            j === i ? { ...r, unit: e.target.value } : r,
+                          ),
+                        )
+                      }
+                      placeholder="Unit"
+                      className="w-full px-2 py-1 text-xs rounded border"
+                      style={{
+                        background: "oklch(0.17 0.018 255)",
+                        borderColor: "oklch(0.28 0.025 252)",
+                        color: "oklch(0.88 0.010 260)",
+                      }}
+                    />
+                  </div>
+                  <div className="col-span-3">
+                    <input
+                      type="number"
+                      min={0}
+                      value={row.cost}
+                      onChange={(e) =>
+                        setSpareRows((prev) =>
+                          prev.map((r, j) =>
+                            j === i
+                              ? { ...r, cost: Number(e.target.value) }
+                              : r,
+                          ),
+                        )
+                      }
+                      placeholder="Cost ₹"
+                      className="w-full px-2 py-1 text-xs rounded border"
+                      style={{
+                        background: "oklch(0.17 0.018 255)",
+                        borderColor: "oklch(0.28 0.025 252)",
+                        color: "oklch(0.88 0.010 260)",
+                      }}
+                    />
+                  </div>
+                  <div className="col-span-1 flex justify-center">
+                    <button
+                      type="button"
+                      onClick={() =>
+                        setSpareRows((prev) => prev.filter((_, j) => j !== i))
+                      }
+                      style={{ color: "oklch(0.78 0.17 27)" }}
+                    >
+                      ✕
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </motion.div>
 
             {/* Submit */}
             <motion.div

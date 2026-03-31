@@ -17,6 +17,7 @@ import LoginPage from "./pages/LoginPage";
 import OperatorLogbookPage from "./pages/OperatorLogbookPage";
 import PredictivePage from "./pages/PredictivePage";
 import PreventivePage from "./pages/PreventivePage";
+import SparesPage from "./pages/SparesPage";
 import TaskListPage from "./pages/TaskListPage";
 
 // Global catastrophic error boundary
@@ -330,6 +331,12 @@ function AppRouter() {
       return (
         <PageWrapper>
           <OperatorLogbookPage />
+        </PageWrapper>
+      );
+    case "spares":
+      return (
+        <PageWrapper>
+          <SparesPage />
         </PageWrapper>
       );
     default:

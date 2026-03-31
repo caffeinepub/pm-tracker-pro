@@ -34,6 +34,7 @@ import {
   FileSpreadsheet,
   ListTodo,
   LogOut,
+  Package,
   Pencil,
   Plus,
   Printer,
@@ -292,6 +293,8 @@ export default function OperatorLogbookPage() {
     updateLogbookCheckItem,
     deleteLogbookCheckItem,
     submitLogbookEntry,
+    spareItems,
+    addPMSpareUsage,
   } = useApp();
 
   const isAdmin = user?.role === "admin";
@@ -316,6 +319,9 @@ export default function OperatorLogbookPage() {
   const [generalRemarks, setGeneralRemarks] = useState("");
   const [activities, setActivities] = useState<ActivityRow[]>([]);
   const [lastSubmitted, setLastSubmitted] = useState<LogbookEntry | null>(null);
+  const [spareRows, setSpareRows] = useState<
+    Array<{ id: string; spareName: string; qty: number; cost: number }>
+  >([]);
 
   // ─── View Entry Dialog ───────────────────────────────────────────────────
   const [viewEntry, setViewEntry] = useState<LogbookEntry | null>(null);
@@ -427,6 +433,7 @@ export default function OperatorLogbookPage() {
         remarks,
       }));
 
+    const validSpares = spareRows.filter((s) => s.spareName.trim());
     const entry: LogbookEntry = {
       id: genId(),
       date: entryDate,
@@ -436,15 +443,44 @@ export default function OperatorLogbookPage() {
       generalRemarks,
       submittedAt: Date.now(),
       activities: validActivities,
+      spareUsed:
+        validSpares.length > 0
+          ? validSpares.map(({ spareName, qty, cost }) => ({
+              spareName,
+              qty,
+              cost,
+            }))
+          : undefined,
     };
 
     submitLogbookEntry(entry);
+
+    // Track spare cost in pmSpareUsage for material issue slip
+    if (validSpares.length > 0) {
+      addPMSpareUsage({
+        id: `logbook-spare-${Date.now()}`,
+        machineId: "logbook",
+        machineName: "Operator Logbook",
+        date: entryDate,
+        spareUsed: validSpares.map(({ spareName, qty, cost }) => ({
+          spareName,
+          qty,
+          unit: "pcs",
+          cost,
+        })),
+        submittedBy: user.name || user.username,
+        submittedByUsername: user.username,
+        workType: "Logbook",
+      });
+    }
+
     setLastSubmitted(entry);
 
     // Reset form (activities reset daily)
     setEntryItems({});
     setGeneralRemarks("");
     setActivities([]);
+    setSpareRows([]);
     toast.success("Logbook entry submitted successfully!");
   }
 
@@ -1337,6 +1373,144 @@ export default function OperatorLogbookPage() {
                       </motion.div>
                     ))}
                   </AnimatePresence>
+                )}
+              </div>
+
+              {/* ── Spares Used ─────────────────────────────────────── */}
+              <div
+                className="rounded-lg p-4 mb-5"
+                style={{
+                  background: "oklch(0.165 0.022 252 / 0.6)",
+                  border: "1px solid oklch(0.30 0.025 252)",
+                }}
+              >
+                <div className="flex items-center justify-between mb-3">
+                  <div className="flex items-center gap-2">
+                    <Package
+                      className="w-4 h-4"
+                      style={{ color: "oklch(0.80 0.13 35)" }}
+                    />
+                    <h4
+                      className="font-semibold text-sm"
+                      style={{ color: "oklch(0.88 0.010 260)" }}
+                    >
+                      Spares Used (Optional)
+                    </h4>
+                  </div>
+                  <Button
+                    size="sm"
+                    type="button"
+                    onClick={() =>
+                      setSpareRows((prev) => [
+                        ...prev,
+                        { id: genId(), spareName: "", qty: 1, cost: 0 },
+                      ])
+                    }
+                    data-ocid="logbook.secondary_button"
+                    style={{
+                      background: "oklch(0.45 0.12 35 / 0.20)",
+                      color: "oklch(0.80 0.13 35)",
+                      border: "1px solid oklch(0.55 0.12 35 / 0.4)",
+                      fontSize: "12px",
+                    }}
+                  >
+                    <Plus className="w-3.5 h-3.5 mr-1" /> Add Spare
+                  </Button>
+                </div>
+                {spareRows.length === 0 ? (
+                  <p
+                    className="text-xs text-center py-2"
+                    style={{ color: "oklch(0.48 0.010 260)" }}
+                  >
+                    No spares recorded. Click "Add Spare" if any parts were
+                    used.
+                  </p>
+                ) : (
+                  <div className="space-y-2">
+                    {spareRows.map((row, idx) => (
+                      <div
+                        key={row.id}
+                        className="flex items-center gap-2 flex-wrap"
+                      >
+                        <div className="flex-1 min-w-[140px]">
+                          <Input
+                            value={row.spareName}
+                            onChange={(e) =>
+                              setSpareRows((prev) =>
+                                prev.map((r) =>
+                                  r.id === row.id
+                                    ? { ...r, spareName: e.target.value }
+                                    : r,
+                                ),
+                              )
+                            }
+                            placeholder="Spare part name…"
+                            list="logbook-spare-list"
+                            className="h-8 text-xs"
+                            style={inputStyle}
+                            data-ocid={`logbook.input.${idx + 1}`}
+                          />
+                        </div>
+                        <div className="w-20">
+                          <Input
+                            type="number"
+                            value={row.qty}
+                            onChange={(e) =>
+                              setSpareRows((prev) =>
+                                prev.map((r) =>
+                                  r.id === row.id
+                                    ? { ...r, qty: Number(e.target.value) }
+                                    : r,
+                                ),
+                              )
+                            }
+                            placeholder="Qty"
+                            className="h-8 text-xs"
+                            style={inputStyle}
+                            min={0}
+                          />
+                        </div>
+                        <div className="w-24">
+                          <Input
+                            type="number"
+                            value={row.cost}
+                            onChange={(e) =>
+                              setSpareRows((prev) =>
+                                prev.map((r) =>
+                                  r.id === row.id
+                                    ? { ...r, cost: Number(e.target.value) }
+                                    : r,
+                                ),
+                              )
+                            }
+                            placeholder="Cost ₹"
+                            className="h-8 text-xs"
+                            style={inputStyle}
+                            min={0}
+                          />
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() =>
+                            setSpareRows((prev) =>
+                              prev.filter((r) => r.id !== row.id),
+                            )
+                          }
+                          className="p-1.5 rounded"
+                          style={{ color: "oklch(0.68 0.15 25)" }}
+                        >
+                          <X className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
+                    ))}
+                    <datalist id="logbook-spare-list">
+                      {(Array.isArray(spareItems) ? spareItems : []).map(
+                        (s) => (
+                          <option key={s.id} value={s.partName} />
+                        ),
+                      )}
+                    </datalist>
+                  </div>
                 )}
               </div>
 

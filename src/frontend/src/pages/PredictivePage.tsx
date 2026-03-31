@@ -66,6 +66,8 @@ export default function PredictivePage() {
     deletePredictivePlan,
     submitPredictiveRecord,
     approvePredictiveRecord,
+    spareItems,
+    addPMSpareUsage,
   } = useApp();
 
   const [showPlanForm, setShowPlanForm] = useState(false);
@@ -74,6 +76,15 @@ export default function PredictivePage() {
   const importRef = useRef<HTMLInputElement>(null);
 
   const [selectedPlanId, setSelectedPlanId] = useState("");
+  const [pdmSpareRows, setPdmSpareRows] = useState<
+    Array<{
+      spareName: string;
+      partSpec: string;
+      qty: number;
+      unit: string;
+      cost: number;
+    }>
+  >([]);
   const [readingForm, setReadingForm] = useState<{
     date: string;
     readings: Record<string, string>;
@@ -153,6 +164,19 @@ export default function PredictivePage() {
       submittedAt: Date.now(),
     };
     submitPredictiveRecord(record);
+    if (pdmSpareRows.length > 0 && selectedPlan) {
+      addPMSpareUsage({
+        id: `pdm-spare-${Date.now()}`,
+        machineId: selectedPlan.machineId,
+        machineName: selectedPlan.machineName,
+        date: readingForm.date,
+        spareUsed: pdmSpareRows,
+        submittedBy: user?.name ?? "",
+        submittedByUsername: user?.username ?? "",
+        workType: "Predictive",
+      });
+    }
+    setPdmSpareRows([]);
     toast.success("Reading submitted");
     setReadingForm({
       date: new Date().toISOString().split("T")[0],
@@ -783,6 +807,159 @@ export default function PredictivePage() {
                       data-ocid="predictive.textarea"
                       style={{ ...inputStyle }}
                     />
+                  </div>
+                  {/* Spares Used */}
+                  <div className="space-y-2">
+                    <div className="flex items-center justify-between">
+                      <Label
+                        className="text-xs"
+                        style={{ color: "oklch(0.65 0.010 260)" }}
+                      >
+                        Spares Used (Optional)
+                      </Label>
+                      <button
+                        type="button"
+                        onClick={() =>
+                          setPdmSpareRows((prev) => [
+                            ...prev,
+                            {
+                              spareName: "",
+                              partSpec: "",
+                              qty: 1,
+                              unit: "Nos",
+                              cost: 0,
+                            },
+                          ])
+                        }
+                        className="text-xs px-2 py-1 rounded"
+                        style={{
+                          background: "oklch(0.48 0.13 200 / 0.15)",
+                          color: "oklch(0.70 0.14 200)",
+                          border: "1px solid oklch(0.48 0.13 200 / 0.35)",
+                        }}
+                      >
+                        + Add Spare
+                      </button>
+                    </div>
+                    {pdmSpareRows.map((row, i) => (
+                      <div
+                        // biome-ignore lint/suspicious/noArrayIndexKey: user-added spare row
+                        key={i}
+                        className="grid grid-cols-12 gap-1 items-center"
+                      >
+                        <div className="col-span-4">
+                          <input
+                            list={`pdm-spare-names-${i}`}
+                            value={row.spareName}
+                            onChange={(e) => {
+                              const val = e.target.value;
+                              const found = spareItems.find(
+                                (s) => s.partName === val,
+                              );
+                              setPdmSpareRows((prev) =>
+                                prev.map((r, j) =>
+                                  j === i
+                                    ? {
+                                        ...r,
+                                        spareName: val,
+                                        partSpec: found?.partSpec ?? r.partSpec,
+                                        unit: found?.unit ?? r.unit,
+                                        cost: found
+                                          ? found.costPerUnit * r.qty
+                                          : r.cost,
+                                      }
+                                    : r,
+                                ),
+                              );
+                            }}
+                            placeholder="Part name"
+                            className="w-full px-2 py-1 text-xs rounded border"
+                            style={{ ...inputStyle }}
+                          />
+                          <datalist id={`pdm-spare-names-${i}`}>
+                            {spareItems.map((s) => (
+                              <option key={s.id} value={s.partName} />
+                            ))}
+                          </datalist>
+                        </div>
+                        <div className="col-span-2">
+                          <input
+                            type="number"
+                            min={0}
+                            value={row.qty}
+                            onChange={(e) => {
+                              const qty = Number(e.target.value);
+                              const found = spareItems.find(
+                                (s) => s.partName === row.spareName,
+                              );
+                              setPdmSpareRows((prev) =>
+                                prev.map((r, j) =>
+                                  j === i
+                                    ? {
+                                        ...r,
+                                        qty,
+                                        cost: found
+                                          ? found.costPerUnit * qty
+                                          : r.cost,
+                                      }
+                                    : r,
+                                ),
+                              );
+                            }}
+                            placeholder="Qty"
+                            className="w-full px-2 py-1 text-xs rounded border"
+                            style={{ ...inputStyle }}
+                          />
+                        </div>
+                        <div className="col-span-2">
+                          <input
+                            value={row.unit}
+                            onChange={(e) =>
+                              setPdmSpareRows((prev) =>
+                                prev.map((r, j) =>
+                                  j === i ? { ...r, unit: e.target.value } : r,
+                                ),
+                              )
+                            }
+                            placeholder="Unit"
+                            className="w-full px-2 py-1 text-xs rounded border"
+                            style={{ ...inputStyle }}
+                          />
+                        </div>
+                        <div className="col-span-3">
+                          <input
+                            type="number"
+                            min={0}
+                            value={row.cost}
+                            onChange={(e) =>
+                              setPdmSpareRows((prev) =>
+                                prev.map((r, j) =>
+                                  j === i
+                                    ? { ...r, cost: Number(e.target.value) }
+                                    : r,
+                                ),
+                              )
+                            }
+                            placeholder="Cost ₹"
+                            className="w-full px-2 py-1 text-xs rounded border"
+                            style={{ ...inputStyle }}
+                          />
+                        </div>
+                        <div className="col-span-1 flex justify-center">
+                          <button
+                            type="button"
+                            onClick={() =>
+                              setPdmSpareRows((prev) =>
+                                prev.filter((_, j) => j !== i),
+                              )
+                            }
+                            style={{ color: "oklch(0.78 0.17 27)" }}
+                          >
+                            ✕
+                          </button>
+                        </div>
+                      </div>
+                    ))}
                   </div>
                   <Button
                     type="submit"

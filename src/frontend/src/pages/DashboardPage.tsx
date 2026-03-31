@@ -12,14 +12,19 @@ import {
   Activity,
   AlertTriangle,
   BarChart2,
+  Bell,
+  BookOpen,
   CheckCircle2,
   ClipboardCheck,
   Clock,
   Cpu,
   Download,
+  FileText,
   LayoutGrid,
   Lightbulb,
   LogOut,
+  Package,
+  PrinterIcon,
   Settings,
   Shield,
   Target,
@@ -30,6 +35,7 @@ import { motion } from "motion/react";
 import { useMemo, useState } from "react";
 import {
   Bar,
+  BarChart,
   CartesianGrid,
   ComposedChart,
   Legend,
@@ -188,10 +194,11 @@ function SectionHeader({
   );
 }
 
+const XLSX = (window as any).XLSX;
+
 export default function DashboardPage() {
   const {
     user,
-    logout,
     machines,
     pmPlans,
     pmRecords,
@@ -202,16 +209,27 @@ export default function DashboardPage() {
     approveRecord,
     rejectRecord,
     breakdownRecords,
-
     sectionHoursConfigs,
     prioritizedMachineIds,
     taskRecords,
     bdTargets,
     updateBDTargets,
+    pmSpareUsage,
+    kaizenRecords,
+    predictiveRecords,
+    meterReadings,
+    spareItems,
   } = useApp();
 
   const [showTargetDialog, setShowTargetDialog] = useState(false);
+  const [showIssueSlip, setShowIssueSlip] = useState(false);
+  const [issueSlipDate, setIssueSlipDate] = useState(
+    new Date().toISOString().split("T")[0],
+  );
   const [targetForm, setTargetForm] = useState<BDTargets>({ ...bdTargets });
+  const [showKPIDialog, setShowKPIDialog] = useState(false);
+  const [kpiMonth, setKpiMonth] = useState(new Date().getMonth() + 1);
+  const [kpiYear, setKpiYear] = useState(new Date().getFullYear());
 
   const currentMonth = new Date().getMonth() + 1;
   const currentMonthBig = BigInt(currentMonth);
@@ -372,6 +390,358 @@ export default function DashboardPage() {
     year: "numeric",
   });
 
+  function generateKPIReport(month: number, year: number) {
+    const monthLabel = MONTH_LABELS[month - 1];
+    const monthStart = new Date(year, month - 1, 1);
+    const monthEnd = new Date(year, month, 0, 23, 59, 59);
+    const isInMonth = (dateStr: string) => {
+      const d = new Date(dateStr);
+      return d >= monthStart && d <= monthEnd;
+    };
+
+    // PM Data
+    const plannedPM = pmPlans.filter((p) => p.month === BigInt(month)).length;
+    const completedPM = pmRecords.filter((r) => {
+      const d = new Date(Number(r.completedDate));
+      return (
+        d >= monthStart &&
+        d <= monthEnd &&
+        (r.status === "completed" || r.status === "pending-approval")
+      );
+    }).length;
+    const pmPct =
+      plannedPM > 0 ? ((completedPM / plannedPM) * 100).toFixed(1) : "0.0";
+    const pendingPMApprovals = pmRecords.filter(
+      (r) => r.status === "pending-approval",
+    ).length;
+
+    // Breakdown Data
+    const monthBDs = breakdownRecords.filter(
+      (r) => r.status === "approved-breakdown" && isInMonth(r.date),
+    );
+    const totalBdCount = monthBDs.length;
+    const totalBdHours = monthBDs.reduce(
+      (s, r) => s + r.durationMinutes / 60,
+      0,
+    );
+    const maxAvailHrs = Math.max(
+      ...sectionHoursConfigs.map((c) => c.availableProductionHrs - c.powerOff),
+      1,
+    );
+    const bdPct =
+      maxAvailHrs > 0 ? ((totalBdHours / maxAvailHrs) * 100).toFixed(1) : "0.0";
+    const mttr =
+      totalBdCount > 0 ? (totalBdHours / totalBdCount).toFixed(2) : "N/A";
+    const mtbf =
+      totalBdCount > 0
+        ? ((maxAvailHrs - totalBdHours) / totalBdCount).toFixed(1)
+        : maxAvailHrs.toFixed(1);
+    const uptime =
+      Number.parseFloat(mttr) + Number.parseFloat(mtbf || "0") > 0
+        ? (
+            (Number.parseFloat(mtbf || "0") /
+              (Number.parseFloat(mttr || "0") +
+                Number.parseFloat(mtbf || "0"))) *
+            100
+          ).toFixed(1)
+        : "100.0";
+
+    // Predictive Data
+    const safePredict = Array.isArray(predictiveRecords)
+      ? predictiveRecords
+      : [];
+    const monthPredComplete = safePredict.filter(
+      (r) => r.status === "completed" && isInMonth(r.date),
+    ).length;
+    const monthPredPending = safePredict.filter(
+      (r) => r.status === "pending-approval" && isInMonth(r.date),
+    ).length;
+
+    // Tasks
+    const safeTasks = Array.isArray(taskRecords) ? taskRecords : [];
+    const totalTasks = safeTasks.length;
+    const completedTasks = safeTasks.filter(
+      (t) => t.status === "complete",
+    ).length;
+    const pendingTasks = safeTasks.filter((t) =>
+      ["not-started", "in-process", "hold"].includes(t.status),
+    ).length;
+    const highPriTasks = safeTasks.filter(
+      (t) =>
+        t.priority === "high" && !["complete", "canceled"].includes(t.status),
+    ).length;
+
+    // Unplanned %
+    const totalPlanned =
+      plannedPM +
+      safePredict.filter((p) => {
+        const d = new Date(p.date);
+        return d >= monthStart && d <= monthEnd;
+      }).length;
+    const unplannedPct =
+      totalPlanned > 0
+        ? ((totalBdCount / totalPlanned) * 100).toFixed(1)
+        : "0.0";
+
+    // Kaizen
+    const safeKaizen = Array.isArray(kaizenRecords) ? kaizenRecords : [];
+    const monthKaizen = safeKaizen.filter((k) =>
+      isInMonth(new Date(k.submittedAt).toISOString().split("T")[0]),
+    );
+    const kaizenSubmitted = monthKaizen.length;
+    const kaizenApproved = monthKaizen.filter(
+      (k) => k.status === "Approved" || k.status === "Closed",
+    ).length;
+    const kaizenPending = monthKaizen.filter(
+      (k) => k.status === "Pending Approval",
+    ).length;
+
+    // Spares
+    const safeSpares = Array.isArray(spareItems) ? spareItems : [];
+
+    // Cost
+    const allSpareUsage = [
+      ...breakdownRecords
+        .filter((r) => isInMonth(r.date) && r.spareUsed)
+        .flatMap((r) =>
+          (r.spareUsed || []).map((s) => ({
+            date: r.date,
+            type: "Breakdown",
+            machine: r.machineName,
+            name: s.spareName,
+            qty: s.qty,
+            cost: s.cost,
+          })),
+        ),
+      ...(Array.isArray(pmSpareUsage) ? pmSpareUsage : [])
+        .filter((p) => isInMonth(p.date))
+        .flatMap((p) =>
+          p.spareUsed.map((s) => ({
+            date: p.date,
+            type: p.workType,
+            machine: p.machineName,
+            name: s.spareName,
+            qty: s.qty,
+            cost: s.cost,
+          })),
+        ),
+    ];
+    const totalCost = allSpareUsage.reduce((s, r) => s + r.cost, 0);
+
+    // Electricity
+    const safeReadings = Array.isArray(meterReadings) ? meterReadings : [];
+    const monthReadings = safeReadings.filter((r) => isInMonth(r.date));
+    const totalConsumption = monthReadings.reduce(
+      (s, r) => s + (r.consumption || 0),
+      0,
+    );
+
+    // Section KPIs
+    const sectionRows = SECTIONS.map((sec) => {
+      const secMachines = machines
+        .filter((m) => m.section === sec)
+        .map((m) => m.id);
+      const secBDs = monthBDs.filter((r) => secMachines.includes(r.machineId));
+      const secCount = secBDs.length;
+      const secHours = secBDs.reduce((s, r) => s + r.durationMinutes / 60, 0);
+      const cfg = sectionHoursConfigs.find((c) => c.section === sec);
+      const avail = cfg
+        ? cfg.availableProductionHrs - cfg.powerOff
+        : maxAvailHrs;
+      const secBdPct =
+        avail > 0 ? ((secHours / avail) * 100).toFixed(1) : "0.0";
+      const secMttr = secCount > 0 ? (secHours / secCount).toFixed(2) : "N/A";
+      const secMtbf =
+        secCount > 0
+          ? ((avail - secHours) / secCount).toFixed(1)
+          : avail.toFixed(1);
+      const tgt = bdTargets[sec as keyof typeof bdTargets];
+      return { sec, secCount, secBdPct, secMttr, secMtbf, tgt };
+    });
+
+    const html = `<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<title>Monthly KPI Report — ${monthLabel} ${year}</title>
+<style>
+@page { size: A4; margin: 12mm 10mm; }
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body { font-family: Arial, sans-serif; font-size: 10px; color: #111; background: #fff; }
+h1 { font-size: 16px; font-weight: 700; text-align: center; text-transform: uppercase; letter-spacing: 1px; }
+h2 { font-size: 12px; font-weight: 700; margin: 12px 0 5px; border-bottom: 2px solid #111; padding-bottom: 2px; text-transform: uppercase; letter-spacing: 0.5px; }
+h3 { font-size: 10px; text-align: center; color: #555; margin-bottom: 3px; }
+.header-box { border: 2px solid #111; padding: 10px; margin-bottom: 12px; }
+.kpi-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; margin-bottom: 10px; }
+.kpi-card { border: 1px solid #ccc; padding: 6px 8px; border-radius: 4px; }
+.kpi-label { font-size: 8.5px; color: #777; text-transform: uppercase; letter-spacing: 0.4px; }
+.kpi-value { font-size: 16px; font-weight: 700; margin-top: 1px; }
+table { width: 100%; border-collapse: collapse; margin-bottom: 10px; font-size: 9.5px; }
+th { background: #1a1a1a; color: #fff; padding: 5px 6px; text-align: left; font-size: 9px; text-transform: uppercase; letter-spacing: 0.4px; }
+td { padding: 4px 6px; border-bottom: 1px solid #eee; vertical-align: middle; }
+tr:nth-child(even) td { background: #f9f9f9; }
+.footer { margin-top: 16px; border-top: 1px solid #ccc; padding-top: 8px; text-align: center; font-size: 9px; color: #888; }
+.section-title { font-size: 11px; font-weight: 600; color: #333; }
+@media print { body { -webkit-print-color-adjust: exact; print-color-adjust: exact; } }
+</style>
+</head>
+<body>
+<div class="header-box">
+  <h3>Plant Maintenance Management System</h3>
+  <h1>Monthly KPI Report — ${monthLabel} ${year}</h1>
+  <p style="text-align:center;font-size:9px;color:#666;margin-top:4px;">Generated on: ${new Date().toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" })}</p>
+</div>
+
+<h2>1. PM Summary</h2>
+<div class="kpi-grid">
+  <div class="kpi-card"><div class="kpi-label">Planned PM</div><div class="kpi-value">${plannedPM}</div></div>
+  <div class="kpi-card"><div class="kpi-label">Completed PM</div><div class="kpi-value">${completedPM}</div></div>
+  <div class="kpi-card"><div class="kpi-label">Completion %</div><div class="kpi-value">${pmPct}%</div></div>
+  <div class="kpi-card"><div class="kpi-label">Pending Approvals</div><div class="kpi-value">${pendingPMApprovals}</div></div>
+</div>
+
+<h2>2. Breakdown Summary</h2>
+<div class="kpi-grid">
+  <div class="kpi-card"><div class="kpi-label">BD Count</div><div class="kpi-value">${totalBdCount}</div></div>
+  <div class="kpi-card"><div class="kpi-label">BD Hours</div><div class="kpi-value">${totalBdHours.toFixed(1)}h</div></div>
+  <div class="kpi-card"><div class="kpi-label">BD%</div><div class="kpi-value">${bdPct}%</div></div>
+  <div class="kpi-card"><div class="kpi-label">Uptime%</div><div class="kpi-value">${uptime}%</div></div>
+  <div class="kpi-card"><div class="kpi-label">MTTR (hrs)</div><div class="kpi-value">${mttr}</div></div>
+  <div class="kpi-card"><div class="kpi-label">MTBF (hrs)</div><div class="kpi-value">${mtbf}</div></div>
+  <div class="kpi-card"><div class="kpi-label">Avail. Hrs</div><div class="kpi-value">${maxAvailHrs.toFixed(0)}</div></div>
+</div>
+
+<h2>3. Section KPIs</h2>
+<table>
+  <thead><tr><th>Section</th><th>BD Count</th><th>BD%</th><th>MTTR (h)</th><th>MTBF (h)</th><th>Target BD%</th><th>Target Uptime%</th></tr></thead>
+  <tbody>
+    ${sectionRows
+      .map(
+        (s) => `<tr>
+      <td><strong>${s.sec}</strong></td>
+      <td>${s.secCount}</td>
+      <td>${s.secBdPct}%</td>
+      <td>${s.secMttr}</td>
+      <td>${s.secMtbf}</td>
+      <td>${s.tgt?.bdPct ?? "—"}%</td>
+      <td>${s.tgt?.uptime ?? "—"}%</td>
+    </tr>`,
+      )
+      .join("")}
+  </tbody>
+</table>
+
+<h2>4. Predictive Maintenance Summary</h2>
+<div class="kpi-grid" style="grid-template-columns:repeat(3,1fr)">
+  <div class="kpi-card"><div class="kpi-label">Completed</div><div class="kpi-value">${monthPredComplete}</div></div>
+  <div class="kpi-card"><div class="kpi-label">Pending Approval</div><div class="kpi-value">${monthPredPending}</div></div>
+</div>
+
+<h2>5. Task / Planner Summary</h2>
+<div class="kpi-grid">
+  <div class="kpi-card"><div class="kpi-label">Total Tasks</div><div class="kpi-value">${totalTasks}</div></div>
+  <div class="kpi-card"><div class="kpi-label">Completed</div><div class="kpi-value">${completedTasks}</div></div>
+  <div class="kpi-card"><div class="kpi-label">Pending</div><div class="kpi-value">${pendingTasks}</div></div>
+  <div class="kpi-card"><div class="kpi-label">High Priority</div><div class="kpi-value">${highPriTasks}</div></div>
+</div>
+
+<h2>6. Unplanned Maintenance %</h2>
+<p style="font-size:11px;margin-bottom:8px;">
+  Formula: Breakdown Count (${totalBdCount}) ÷ Total Planned (PM + Predictive = ${totalPlanned}) × 100
+  = <strong>${unplannedPct}%</strong>
+</p>
+
+<h2>7. Kaizen Summary</h2>
+<div class="kpi-grid" style="grid-template-columns:repeat(3,1fr)">
+  <div class="kpi-card"><div class="kpi-label">Submitted</div><div class="kpi-value">${kaizenSubmitted}</div></div>
+  <div class="kpi-card"><div class="kpi-label">Approved</div><div class="kpi-value">${kaizenApproved}</div></div>
+  <div class="kpi-card"><div class="kpi-label">Pending</div><div class="kpi-value">${kaizenPending}</div></div>
+</div>
+
+<h2>8. Stock of Spares</h2>
+${
+  safeSpares.length === 0
+    ? '<p style="color:#888;font-style:italic;">No spares in master list.</p>'
+    : `
+<table>
+  <thead><tr><th>Part Name</th><th>Specification</th><th>Qty in Stock</th><th>Min Level</th><th>Unit</th><th>Cost/Unit</th><th>Status</th></tr></thead>
+  <tbody>
+    ${safeSpares
+      .map(
+        (s) => `<tr>
+      <td>${s.partName}</td>
+      <td>${s.partSpec || "—"}</td>
+      <td>${s.qtyInStock}</td>
+      <td>${s.minStockLevel}</td>
+      <td>${s.unit}</td>
+      <td>₹${s.costPerUnit}</td>
+      <td style="font-weight:700;color:${s.qtyInStock <= s.minStockLevel ? "#c0392b" : "#27ae60"}">${s.qtyInStock <= s.minStockLevel ? "LOW STOCK" : "OK"}</td>
+    </tr>`,
+      )
+      .join("")}
+  </tbody>
+</table>`
+}
+
+<h2>9. Maintenance Cost (${monthLabel} ${year})</h2>
+${
+  allSpareUsage.length === 0
+    ? '<p style="color:#888;font-style:italic;">No spare usage recorded for this month.</p>'
+    : `
+<table>
+  <thead><tr><th>Date</th><th>Type</th><th>Machine</th><th>Spare Name</th><th>Qty</th><th>Cost (₹)</th></tr></thead>
+  <tbody>
+    ${allSpareUsage
+      .map(
+        (r) => `<tr>
+      <td>${r.date}</td><td>${r.type}</td><td>${r.machine}</td><td>${r.name}</td><td>${r.qty}</td><td>₹${r.cost.toLocaleString()}</td>
+    </tr>`,
+      )
+      .join("")}
+    <tr style="font-weight:700;background:#f0f0f0"><td colspan="5" style="text-align:right;">Total Cost:</td><td>₹${totalCost.toLocaleString()}</td></tr>
+  </tbody>
+</table>`
+}
+
+<h2>10. Electricity Consumption (${monthLabel} ${year})</h2>
+${
+  monthReadings.length === 0
+    ? '<p style="color:#888;font-style:italic;">No electricity readings for this month.</p>'
+    : `
+<table>
+  <thead><tr><th>Date</th><th>Meter</th><th>Reading</th><th>Consumption</th><th>Entered By</th></tr></thead>
+  <tbody>
+    ${monthReadings
+      .map(
+        (r) => `<tr>
+      <td>${r.date}</td><td>${r.meterName}</td><td>${r.endReading ?? r.startReading}</td><td>${(r.consumption || 0).toFixed(2)} ${""}</td><td>${r.enteredBy}</td>
+    </tr>`,
+      )
+      .join("")}
+    <tr style="font-weight:700;background:#f0f0f0"><td colspan="3" style="text-align:right;">Total Consumption:</td><td>${totalConsumption.toFixed(2)}</td><td></td></tr>
+  </tbody>
+</table>`
+}
+
+<div class="footer">
+  <p>Plant Maintenance Management System — Monthly KPI Report — ${monthLabel} ${year}</p>
+  <p>Generated: ${new Date().toLocaleString("en-IN")}</p>
+</div>
+</body></html>`;
+
+    const win = window.open("", "_blank", "width=1000,height=800");
+    if (!win) {
+      toast.error("Pop-up blocked. Please allow pop-ups and try again.");
+      return;
+    }
+    win.document.write(html);
+    win.document.close();
+    win.focus();
+    setTimeout(() => {
+      win.print();
+    }, 800);
+  }
+
   return (
     <>
       <MorningPopup />
@@ -379,122 +749,6 @@ export default function DashboardPage() {
         className="min-h-screen flex flex-col"
         style={{ background: "oklch(0.165 0.022 252)" }}
       >
-        {/* Header */}
-        <header
-          className="sticky top-0 z-50 border-b"
-          style={{
-            background: "oklch(0.19 0.020 255)",
-            borderColor: "oklch(0.34 0.030 252)",
-          }}
-        >
-          <div className="max-w-7xl mx-auto px-4 h-16 flex items-center justify-between">
-            <div className="flex items-center gap-3">
-              <div
-                className="flex items-center justify-center w-8 h-8 rounded-lg"
-                style={{
-                  background: "oklch(0.70 0.188 55 / 0.15)",
-                  border: "1px solid oklch(0.70 0.188 55 / 0.4)",
-                }}
-              >
-                <Settings
-                  className="w-4 h-4"
-                  style={{ color: "oklch(0.80 0.180 55)" }}
-                />
-              </div>
-              <span
-                className="text-lg font-bold tracking-tight"
-                style={{ fontFamily: "BricolageGrotesque, sans-serif" }}
-              >
-                PM{" "}
-                <span style={{ color: "oklch(0.80 0.180 55)" }}>Tracker</span>
-              </span>
-            </div>
-            <nav className="hidden md:flex items-center gap-1">
-              {[
-                {
-                  label: "Dashboard",
-                  page: "dashboard" as const,
-                  active: true,
-                },
-                {
-                  label: "Preventive Maintenance",
-                  page: "preventive" as const,
-                },
-                { label: "Breakdown", page: "breakdown-panel" as const },
-                { label: "Analysis", page: "analysis" as const },
-                { label: "Tasks", page: "task-list" as const },
-              ].map((item) => (
-                <button
-                  key={item.label}
-                  type="button"
-                  data-ocid="nav.link"
-                  onClick={() => navigate(item.page)}
-                  className="px-4 py-2 rounded-lg text-sm font-medium transition-colors"
-                  style={
-                    item.active
-                      ? {
-                          background: "oklch(0.70 0.188 55 / 0.15)",
-                          color: "oklch(0.80 0.180 55)",
-                        }
-                      : { color: "oklch(0.68 0.010 260)" }
-                  }
-                >
-                  {item.label}
-                </button>
-              ))}
-              {user?.role === "admin" && (
-                <button
-                  type="button"
-                  data-ocid="nav.link"
-                  onClick={() => navigate("admin")}
-                  className="px-4 py-2 rounded-lg text-sm font-medium transition-colors hover:bg-white/5"
-                  style={{ color: "oklch(0.68 0.010 260)" }}
-                >
-                  Admin Panel
-                </button>
-              )}
-            </nav>
-            <div className="flex items-center gap-3">
-              <NotificationBell />
-              <div
-                className="flex items-center gap-2 pl-3"
-                style={{ borderLeft: "1px solid oklch(0.34 0.030 252)" }}
-              >
-                <div
-                  className="w-8 h-8 rounded-full flex items-center justify-center font-semibold text-sm"
-                  style={{
-                    background: "oklch(0.70 0.188 55 / 0.20)",
-                    color: "oklch(0.80 0.180 55)",
-                  }}
-                >
-                  {user?.name?.charAt(0) ?? "U"}
-                </div>
-                <div className="hidden sm:block">
-                  <div className="text-sm font-medium leading-tight">
-                    {user?.name}
-                  </div>
-                  <div
-                    className="text-xs capitalize"
-                    style={{ color: "oklch(0.68 0.010 260)" }}
-                  >
-                    {user?.role}
-                  </div>
-                </div>
-                <button
-                  type="button"
-                  data-ocid="nav.button"
-                  onClick={() => logout()}
-                  className="ml-2 p-2 rounded-lg hover:bg-white/5"
-                  style={{ color: "oklch(0.68 0.010 260)" }}
-                  title="Logout"
-                >
-                  <LogOut className="w-4 h-4" />
-                </button>
-              </div>
-            </div>
-          </div>
-        </header>
-
         {/* Hero Band */}
         <div
           className="relative h-28 md:h-36 flex items-center"
@@ -550,6 +804,158 @@ export default function DashboardPage() {
 
         {/* Main Content */}
         <main className="flex-1 max-w-7xl mx-auto w-full px-4 py-6 pb-24 space-y-8">
+          {/* ===== CONSOLIDATED PENDING APPROVALS (admin only) ===== */}
+          {user?.role === "admin" &&
+            (() => {
+              const pendingPM = pmRecords.filter(
+                (r) => r.status === "pending-approval",
+              ).length;
+              const pendingBD = breakdownRecords.filter(
+                (r) => r.status === "pending-approval",
+              ).length;
+              const pendingKaizen = (
+                Array.isArray(kaizenRecords) ? kaizenRecords : []
+              ).filter((k) => k.status === "Pending Approval").length;
+              const pendingTaskStatus = (
+                Array.isArray(taskRecords) ? taskRecords : []
+              ).filter((t) =>
+                t.statusHistory?.some((h) => h.requiresApproval && !h.approved),
+              ).length;
+              const total =
+                pendingPM + pendingBD + pendingKaizen + pendingTaskStatus;
+              if (total === 0)
+                return (
+                  <motion.div
+                    initial={{ opacity: 0, y: -8 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    data-ocid="approvals.panel"
+                    className="industrial-card p-4 flex items-center gap-3"
+                    style={{ borderColor: "oklch(0.45 0.12 145 / 0.4)" }}
+                  >
+                    <CheckCircle2
+                      className="w-5 h-5 shrink-0"
+                      style={{ color: "oklch(0.75 0.13 145)" }}
+                    />
+                    <span
+                      className="text-sm font-medium"
+                      style={{ color: "oklch(0.75 0.13 145)" }}
+                    >
+                      All approvals up to date ✓
+                    </span>
+                  </motion.div>
+                );
+              return (
+                <motion.div
+                  initial={{ opacity: 0, y: -8 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  data-ocid="approvals.panel"
+                  className="industrial-card p-4"
+                  style={{
+                    borderColor: "oklch(0.55 0.17 27 / 0.5)",
+                    background: "oklch(0.20 0.025 252)",
+                  }}
+                >
+                  <div className="flex items-center justify-between mb-3">
+                    <div className="flex items-center gap-2">
+                      <Bell
+                        className="w-4 h-4"
+                        style={{ color: "oklch(0.78 0.17 27)" }}
+                      />
+                      <h3
+                        className="text-sm font-bold"
+                        style={{ color: "oklch(0.78 0.17 27)" }}
+                      >
+                        Pending Approvals
+                      </h3>
+                      <Badge
+                        style={{
+                          background: "oklch(0.45 0.18 27 / 0.25)",
+                          color: "oklch(0.78 0.17 27)",
+                          border: "1px solid oklch(0.55 0.17 27 / 0.4)",
+                          fontSize: "10px",
+                        }}
+                      >
+                        {total} total
+                      </Badge>
+                    </div>
+                  </div>
+                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                    {[
+                      {
+                        label: "PM Checklists",
+                        count: pendingPM,
+                        page: "preventive" as const,
+                        color: "oklch(0.70 0.13 245)",
+                      },
+                      {
+                        label: "Breakdown Slips",
+                        count: pendingBD,
+                        page: "breakdown-panel" as const,
+                        color: "oklch(0.78 0.17 27)",
+                      },
+                      {
+                        label: "Kaizen",
+                        count: pendingKaizen,
+                        page: "kaizen" as const,
+                        color: "oklch(0.75 0.16 290)",
+                      },
+                      {
+                        label: "Task Status",
+                        count: pendingTaskStatus,
+                        page: "task-list" as const,
+                        color: "oklch(0.82 0.14 55)",
+                      },
+                    ].map((item) => (
+                      <div
+                        key={item.label}
+                        className="rounded-lg p-3 flex items-center justify-between"
+                        style={{
+                          background: "oklch(0.165 0.022 252)",
+                          border: `1px solid ${item.color}44`,
+                        }}
+                      >
+                        <div>
+                          <p
+                            className="text-xs font-medium"
+                            style={{ color: "oklch(0.58 0.010 260)" }}
+                          >
+                            {item.label}
+                          </p>
+                          <p
+                            className="text-xl font-bold mt-0.5"
+                            style={{
+                              color:
+                                item.count > 0
+                                  ? item.color
+                                  : "oklch(0.55 0.010 260)",
+                              fontFamily: "BricolageGrotesque, sans-serif",
+                            }}
+                          >
+                            {item.count}
+                          </p>
+                        </div>
+                        {item.count > 0 && (
+                          <button
+                            type="button"
+                            onClick={() => navigate(item.page)}
+                            data-ocid="approvals.secondary_button"
+                            className="text-xs px-2 py-1 rounded font-semibold"
+                            style={{
+                              background: `${item.color}22`,
+                              color: item.color,
+                              border: `1px solid ${item.color}44`,
+                            }}
+                          >
+                            Review
+                          </button>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                </motion.div>
+              );
+            })()}
+
           {/* ===== SECTION 1: PREVENTIVE MAINTENANCE ===== */}
           <section data-ocid="dashboard.section">
             <SectionHeader icon={ClipboardCheck} title="Preventive Maintenance">
@@ -1224,6 +1630,25 @@ export default function DashboardPage() {
                   action: () => navigate("kaizen"),
                   ocid: "quickaction.kaizen.button",
                 },
+                {
+                  label: "Material Issue Slip",
+                  icon: FileText,
+                  color: "oklch(0.80 0.13 35)",
+                  bg: "oklch(0.45 0.12 35 / 0.12)",
+                  border: "oklch(0.55 0.12 35 / 0.3)",
+                  action: () => setShowIssueSlip(true),
+                  ocid: "quickaction.material_issue.button",
+                },
+                {
+                  label: "Monthly KPI Report",
+                  icon: PrinterIcon,
+                  color: "oklch(0.75 0.13 200)",
+                  bg: "oklch(0.45 0.12 200 / 0.12)",
+                  border: "oklch(0.55 0.12 200 / 0.3)",
+                  action: () => setShowKPIDialog(true),
+                  ocid: "quickaction.kpi_report.button",
+                  adminOnly: true,
+                },
               ]
                 .filter((item) => !item.adminOnly || user?.role === "admin")
                 .map((item) => (
@@ -1261,6 +1686,166 @@ export default function DashboardPage() {
                   </motion.button>
                 ))}
             </div>
+          </section>
+
+          {/* ===== SECTION 5: MAINTENANCE COST ===== */}
+          <section data-ocid="dashboard.section">
+            <div className="flex items-center justify-between mb-4">
+              <div className="flex items-center gap-2">
+                <div
+                  className="p-1.5 rounded-lg"
+                  style={{
+                    background: "oklch(0.48 0.13 200 / 0.12)",
+                    border: "1px solid oklch(0.48 0.13 200 / 0.3)",
+                  }}
+                >
+                  <Package
+                    className="w-4 h-4"
+                    style={{ color: "oklch(0.70 0.14 200)" }}
+                  />
+                </div>
+                <h2
+                  className="text-lg font-bold"
+                  style={{ fontFamily: "BricolageGrotesque, sans-serif" }}
+                >
+                  Maintenance Cost{" "}
+                  <span style={{ color: "oklch(0.70 0.14 200)" }}>
+                    (Last 30 Days)
+                  </span>
+                </h2>
+              </div>
+              <Button
+                size="sm"
+                onClick={() => {
+                  if (!XLSX) {
+                    toast.error("XLSX not available");
+                    return;
+                  }
+                  const costData = (() => {
+                    const map: Record<string, number> = {};
+                    for (const bd of breakdownRecords) {
+                      if (bd.spareUsed) {
+                        const cost = bd.spareUsed.reduce(
+                          (s, r) => s + r.cost,
+                          0,
+                        );
+                        if (cost > 0) map[bd.date] = (map[bd.date] || 0) + cost;
+                      }
+                    }
+                    for (const pu of pmSpareUsage) {
+                      const cost = pu.spareUsed.reduce((s, r) => s + r.cost, 0);
+                      if (cost > 0) map[pu.date] = (map[pu.date] || 0) + cost;
+                    }
+                    return Object.entries(map)
+                      .sort(([a], [b]) => a.localeCompare(b))
+                      .map(([date, cost]) => ({
+                        Date: date,
+                        "Total Cost (₹)": cost,
+                      }));
+                  })();
+                  const wb = XLSX.utils.book_new();
+                  const ws = XLSX.utils.json_to_sheet(costData);
+                  XLSX.utils.book_append_sheet(wb, ws, "Cost");
+                  XLSX.writeFile(
+                    wb,
+                    `MaintenanceCost_${new Date().toISOString().split("T")[0]}.xlsx`,
+                  );
+                }}
+                data-ocid="cost_chart.export.button"
+                style={{
+                  background: "oklch(0.30 0.060 145 / 0.25)",
+                  color: "oklch(0.75 0.13 145)",
+                  border: "1px solid oklch(0.52 0.12 145 / 0.4)",
+                  fontSize: "12px",
+                }}
+              >
+                Export Excel
+              </Button>
+            </div>
+            {(() => {
+              const today = new Date();
+              const days30 = Array.from({ length: 30 }, (_, i) => {
+                const d = new Date(today);
+                d.setDate(d.getDate() - (29 - i));
+                return d.toISOString().split("T")[0];
+              });
+              const costMap: Record<string, number> = {};
+              for (const bd of breakdownRecords) {
+                if (bd.spareUsed) {
+                  const cost = bd.spareUsed.reduce((s, r) => s + r.cost, 0);
+                  if (cost > 0)
+                    costMap[bd.date] = (costMap[bd.date] || 0) + cost;
+                }
+              }
+              for (const pu of pmSpareUsage) {
+                const cost = pu.spareUsed.reduce((s, r) => s + r.cost, 0);
+                if (cost > 0) costMap[pu.date] = (costMap[pu.date] || 0) + cost;
+              }
+              const chartData = days30.map((d) => ({
+                date: d.slice(5), // MM-DD
+                cost: costMap[d] || 0,
+              }));
+              const hasCostData = chartData.some((d) => d.cost > 0);
+              return (
+                <div className="industrial-card p-4">
+                  {!hasCostData && (
+                    <p
+                      className="text-center text-sm py-8"
+                      style={{ color: "oklch(0.55 0.010 260)" }}
+                    >
+                      No spare cost data yet. Record spares used in
+                      breakdown/PM/predictive work.
+                    </p>
+                  )}
+                  {hasCostData && (
+                    <ResponsiveContainer width="100%" height={200}>
+                      <BarChart
+                        data={chartData}
+                        margin={{ left: 10, right: 10, top: 5, bottom: 5 }}
+                      >
+                        <CartesianGrid
+                          strokeDasharray="3 3"
+                          stroke="oklch(0.28 0.022 252)"
+                        />
+                        <XAxis
+                          dataKey="date"
+                          tick={{ fontSize: 10, fill: "oklch(0.55 0.010 260)" }}
+                          interval={4}
+                        />
+                        <YAxis
+                          tick={{ fontSize: 10, fill: "oklch(0.55 0.010 260)" }}
+                          tickFormatter={(v) => `₹${v}`}
+                        />
+                        <Tooltip
+                          contentStyle={{
+                            background: "oklch(0.19 0.020 255)",
+                            border: "1px solid oklch(0.34 0.030 252)",
+                            borderRadius: "8px",
+                          }}
+                          labelStyle={{
+                            color: "oklch(0.88 0.010 260)",
+                            fontSize: "12px",
+                          }}
+                          itemStyle={{
+                            color: "oklch(0.70 0.14 200)",
+                            fontSize: "12px",
+                          }}
+                          formatter={(v: number) => [
+                            `₹${v.toLocaleString()}`,
+                            "Cost",
+                          ]}
+                        />
+                        <Bar
+                          dataKey="cost"
+                          fill="oklch(0.48 0.13 200)"
+                          radius={[3, 3, 0, 0]}
+                        />
+                      </BarChart>
+                    </ResponsiveContainer>
+                  )}
+                </div>
+              );
+            })()}
           </section>
 
           {/* Today's PM Schedule (for operator) */}
@@ -1507,6 +2092,371 @@ export default function DashboardPage() {
                 Save Targets
               </Button>
             </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Monthly KPI Report Dialog */}
+      <Dialog open={showKPIDialog} onOpenChange={setShowKPIDialog}>
+        <DialogContent
+          data-ocid="kpi_report.dialog"
+          style={{
+            background: "oklch(0.19 0.020 255)",
+            borderColor: "oklch(0.34 0.030 252)",
+            maxWidth: "480px",
+          }}
+        >
+          <DialogHeader>
+            <DialogTitle
+              style={{
+                fontFamily: "BricolageGrotesque, sans-serif",
+                color: "oklch(0.88 0.010 260)",
+              }}
+            >
+              Generate Monthly KPI Report
+            </DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <Label
+                  className="text-xs font-semibold mb-1 block"
+                  style={{ color: "oklch(0.60 0.010 260)" }}
+                >
+                  Month
+                </Label>
+                <select
+                  value={kpiMonth}
+                  onChange={(e) => setKpiMonth(Number(e.target.value))}
+                  data-ocid="kpi_report.select"
+                  className="w-full px-3 py-2 rounded-md text-sm"
+                  style={{
+                    background: "oklch(0.165 0.022 252)",
+                    border: "1px solid oklch(0.34 0.030 252)",
+                    color: "oklch(0.88 0.010 260)",
+                  }}
+                >
+                  {MONTH_LABELS.map((m, i) => (
+                    <option key={m} value={i + 1}>
+                      {m}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <Label
+                  className="text-xs font-semibold mb-1 block"
+                  style={{ color: "oklch(0.60 0.010 260)" }}
+                >
+                  Year
+                </Label>
+                <select
+                  value={kpiYear}
+                  onChange={(e) => setKpiYear(Number(e.target.value))}
+                  data-ocid="kpi_report.select"
+                  className="w-full px-3 py-2 rounded-md text-sm"
+                  style={{
+                    background: "oklch(0.165 0.022 252)",
+                    border: "1px solid oklch(0.34 0.030 252)",
+                    color: "oklch(0.88 0.010 260)",
+                  }}
+                >
+                  {[currentYear - 1, currentYear, currentYear + 1].map((y) => (
+                    <option key={y} value={y}>
+                      {y}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            </div>
+            <p className="text-xs" style={{ color: "oklch(0.55 0.010 260)" }}>
+              Generates a printable A4 PDF with all KPIs, graphs, summaries, and
+              analytics for the selected month.
+            </p>
+            <div className="flex justify-end gap-2">
+              <Button
+                variant="outline"
+                onClick={() => setShowKPIDialog(false)}
+                data-ocid="kpi_report.cancel_button"
+                style={{
+                  borderColor: "oklch(0.34 0.030 252)",
+                  color: "oklch(0.68 0.010 260)",
+                }}
+              >
+                Cancel
+              </Button>
+              <Button
+                data-ocid="kpi_report.confirm_button"
+                onClick={() => {
+                  setShowKPIDialog(false);
+                  generateKPIReport(kpiMonth, kpiYear);
+                }}
+                style={{
+                  background: "oklch(0.48 0.13 200 / 0.25)",
+                  color: "oklch(0.70 0.14 200)",
+                  border: "1px solid oklch(0.48 0.13 200 / 0.4)",
+                }}
+              >
+                <PrinterIcon className="w-4 h-4 mr-2" /> Generate PDF
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Material Issue Slip Dialog */}
+      <Dialog open={showIssueSlip} onOpenChange={setShowIssueSlip}>
+        <DialogContent
+          data-ocid="issue_slip.dialog"
+          style={{
+            background: "oklch(0.19 0.020 255)",
+            borderColor: "oklch(0.34 0.030 252)",
+            maxWidth: "700px",
+            width: "95vw",
+          }}
+        >
+          <DialogHeader>
+            <DialogTitle style={{ color: "oklch(0.88 0.010 260)" }}>
+              Material Issue Slip
+            </DialogTitle>
+          </DialogHeader>
+          <div className="space-y-3">
+            <div className="flex items-center gap-3">
+              <Label
+                className="text-xs whitespace-nowrap"
+                style={{ color: "oklch(0.65 0.010 260)" }}
+              >
+                Date:
+              </Label>
+              <input
+                type="date"
+                value={issueSlipDate}
+                onChange={(e) => setIssueSlipDate(e.target.value)}
+                data-ocid="issue_slip.input"
+                className="px-2 py-1 text-xs rounded border"
+                style={{
+                  background: "oklch(0.165 0.022 252)",
+                  borderColor: "oklch(0.34 0.030 252)",
+                  color: "oklch(0.88 0.010 260)",
+                }}
+              />
+            </div>
+            {(() => {
+              const rows: Array<{
+                date: string;
+                workType: string;
+                machine: string;
+                spareName: string;
+                qty: number;
+                unit: string;
+                cost: number;
+                issuedBy: string;
+              }> = [];
+              for (const bd of breakdownRecords) {
+                if (bd.date === issueSlipDate && bd.spareUsed) {
+                  for (const s of bd.spareUsed) {
+                    rows.push({
+                      date: bd.date,
+                      workType: "Breakdown",
+                      machine: bd.machineName,
+                      spareName: s.spareName,
+                      qty: s.qty,
+                      unit: s.unit,
+                      cost: s.cost,
+                      issuedBy: bd.operatorName,
+                    });
+                  }
+                }
+              }
+              for (const pu of pmSpareUsage) {
+                if (pu.date === issueSlipDate && pu.spareUsed.length > 0) {
+                  for (const s of pu.spareUsed) {
+                    rows.push({
+                      date: pu.date,
+                      workType: pu.workType,
+                      machine: pu.machineName,
+                      spareName: s.spareName,
+                      qty: s.qty,
+                      unit: s.unit,
+                      cost: s.cost,
+                      issuedBy: pu.submittedBy,
+                    });
+                  }
+                }
+              }
+              const totalCost = rows.reduce((s, r) => s + r.cost, 0);
+              return (
+                <div>
+                  {rows.length === 0 ? (
+                    <p
+                      className="text-center py-6 text-sm"
+                      data-ocid="issue_slip.empty_state"
+                      style={{ color: "oklch(0.55 0.010 260)" }}
+                    >
+                      No spare usage recorded for this date.
+                    </p>
+                  ) : (
+                    <div
+                      className="overflow-x-auto rounded-lg border"
+                      style={{ borderColor: "oklch(0.28 0.022 252)" }}
+                    >
+                      <table className="w-full text-xs">
+                        <thead>
+                          <tr style={{ background: "oklch(0.22 0.022 252)" }}>
+                            {[
+                              "Work Type",
+                              "Machine",
+                              "Spare Name",
+                              "Qty",
+                              "Unit",
+                              "Cost ₹",
+                              "Issued By",
+                            ].map((h) => (
+                              <th
+                                key={h}
+                                className="text-left px-2 py-2 font-semibold"
+                                style={{ color: "oklch(0.68 0.010 260)" }}
+                              >
+                                {h}
+                              </th>
+                            ))}
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {rows.map((row, i) => (
+                            <tr
+                              // biome-ignore lint/suspicious/noArrayIndexKey: daily slip rows
+                              key={i}
+                              data-ocid={`issue_slip.item.${i + 1}`}
+                              style={{
+                                borderTop: "1px solid oklch(0.28 0.022 252)",
+                              }}
+                            >
+                              <td
+                                className="px-2 py-1.5"
+                                style={{ color: "oklch(0.80 0.010 260)" }}
+                              >
+                                {row.workType}
+                              </td>
+                              <td
+                                className="px-2 py-1.5"
+                                style={{ color: "oklch(0.80 0.010 260)" }}
+                              >
+                                {row.machine}
+                              </td>
+                              <td
+                                className="px-2 py-1.5 font-medium"
+                                style={{ color: "oklch(0.88 0.010 260)" }}
+                              >
+                                {row.spareName}
+                              </td>
+                              <td
+                                className="px-2 py-1.5"
+                                style={{ color: "oklch(0.88 0.010 260)" }}
+                              >
+                                {row.qty}
+                              </td>
+                              <td
+                                className="px-2 py-1.5"
+                                style={{ color: "oklch(0.68 0.010 260)" }}
+                              >
+                                {row.unit}
+                              </td>
+                              <td
+                                className="px-2 py-1.5 font-semibold"
+                                style={{ color: "oklch(0.80 0.180 55)" }}
+                              >
+                                ₹{row.cost.toLocaleString()}
+                              </td>
+                              <td
+                                className="px-2 py-1.5"
+                                style={{ color: "oklch(0.68 0.010 260)" }}
+                              >
+                                {row.issuedBy}
+                              </td>
+                            </tr>
+                          ))}
+                          <tr
+                            style={{
+                              borderTop: "2px solid oklch(0.34 0.030 252)",
+                              background: "oklch(0.22 0.022 252)",
+                            }}
+                          >
+                            <td
+                              colSpan={5}
+                              className="px-2 py-2 text-right font-bold text-xs"
+                              style={{ color: "oklch(0.68 0.010 260)" }}
+                            >
+                              Total Cost:
+                            </td>
+                            <td
+                              className="px-2 py-2 font-bold"
+                              style={{ color: "oklch(0.80 0.180 55)" }}
+                            >
+                              ₹{totalCost.toLocaleString()}
+                            </td>
+                            <td />
+                          </tr>
+                        </tbody>
+                      </table>
+                    </div>
+                  )}
+                  {rows.length > 0 && (
+                    <div className="flex gap-2 justify-end mt-3">
+                      <Button
+                        size="sm"
+                        data-ocid="issue_slip.export.button"
+                        onClick={() => {
+                          if (!XLSX) {
+                            toast.error("XLSX not available");
+                            return;
+                          }
+                          const wb = XLSX.utils.book_new();
+                          const ws = XLSX.utils.json_to_sheet(
+                            rows.map((r) => ({
+                              Date: r.date,
+                              "Work Type": r.workType,
+                              Machine: r.machine,
+                              "Spare Name": r.spareName,
+                              Qty: r.qty,
+                              Unit: r.unit,
+                              "Cost (₹)": r.cost,
+                              "Issued By": r.issuedBy,
+                            })),
+                          );
+                          XLSX.utils.book_append_sheet(wb, ws, "Issue Slip");
+                          XLSX.writeFile(
+                            wb,
+                            `MaterialIssueSlip_${issueSlipDate}.xlsx`,
+                          );
+                        }}
+                        style={{
+                          background: "oklch(0.30 0.060 145 / 0.25)",
+                          color: "oklch(0.75 0.13 145)",
+                          border: "1px solid oklch(0.52 0.12 145 / 0.4)",
+                          fontSize: "12px",
+                        }}
+                      >
+                        Download Excel
+                      </Button>
+                      <Button
+                        size="sm"
+                        data-ocid="issue_slip.print_button"
+                        onClick={() => window.print()}
+                        style={{
+                          background: "oklch(0.48 0.13 200 / 0.20)",
+                          color: "oklch(0.70 0.14 200)",
+                          border: "1px solid oklch(0.48 0.13 200 / 0.4)",
+                          fontSize: "12px",
+                        }}
+                      >
+                        Print
+                      </Button>
+                    </div>
+                  )}
+                </div>
+              );
+            })()}
           </div>
         </DialogContent>
       </Dialog>

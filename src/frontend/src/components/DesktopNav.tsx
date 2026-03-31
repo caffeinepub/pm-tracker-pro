@@ -8,6 +8,7 @@ import {
   LayoutDashboard,
   Lightbulb,
   LogOut,
+  Package,
   Settings,
   Zap,
 } from "lucide-react";
@@ -83,6 +84,13 @@ export default function DesktopNav() {
       action: () => navigate("logbook"),
       active: isActive(["logbook"]),
       ocid: "desktop_nav.logbook.link",
+    },
+    {
+      label: "Spares",
+      icon: Package,
+      action: () => navigate("spares"),
+      active: isActive(["spares"]),
+      ocid: "desktop_nav.spares.link",
     },
     ...(user.role === "admin"
       ? [
