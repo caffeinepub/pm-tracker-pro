@@ -9,8 +9,12 @@ import BreakdownPanelPage from "./pages/BreakdownPanelPage";
 import CapaPage from "./pages/CapaPage";
 import ChecklistPage from "./pages/ChecklistPage";
 import DashboardPage from "./pages/DashboardPage";
+import ElectricityPage from "./pages/ElectricityPage";
 import HistoryPage from "./pages/HistoryPage";
+import KaizenPage from "./pages/KaizenPage";
 import LoginPage from "./pages/LoginPage";
+import OperatorLogbookPage from "./pages/OperatorLogbookPage";
+import PredictivePage from "./pages/PredictivePage";
 import PreventivePage from "./pages/PreventivePage";
 import TaskListPage from "./pages/TaskListPage";
 
@@ -101,6 +105,14 @@ function AppRouter() {
       return <HistoryPage />;
     case "task-list":
       return <TaskListPage />;
+    case "kaizen":
+      return <KaizenPage />;
+    case "predictive":
+      return <PredictivePage />;
+    case "electricity":
+      return <ElectricityPage />;
+    case "logbook":
+      return <OperatorLogbookPage />;
     default:
       return <LoginPage />;
   }

@@ -74,6 +74,8 @@ export default function AnalysisPage() {
     user,
     machines,
     breakdownRecords,
+    pmPlans,
+    predictivePlans,
     sectionHoursConfigs,
     updateSectionHoursConfig,
     bdTargets,
@@ -212,8 +214,17 @@ export default function AnalysisPage() {
       .map((m) => m.id);
     const cfg = sectionHoursConfigs.find((c) => c.section === section);
     const availHrs = cfg ? cfg.availableProductionHrs - cfg.powerOff : 0;
+    const currentMonthIndex = new Date().getMonth();
 
     return MONTH_NAMES.map((monthName, monthIdx) => {
+      if (monthIdx > currentMonthIndex)
+        return {
+          month: monthName,
+          bdPct: null,
+          mttr: null,
+          mtbf: null,
+          uptime: null,
+        };
       const monthBds = breakdownRecords.filter((r) => {
         if (r.status !== "approved-breakdown") return false;
         if (!sectionMachineIds.includes(r.machineId)) return false;
@@ -234,12 +245,13 @@ export default function AnalysisPage() {
   }
 
   function getOverallPlantMetrics() {
-    const totalAvailHrs = SECTIONS.reduce((sum, section) => {
-      const cfg = sectionHoursConfigs.find((c) => c.section === section);
-      return (
-        sum + ((cfg?.availableProductionHrs ?? 2000) - (cfg?.powerOff ?? 0))
-      );
-    }, 0);
+    const totalAvailHrs = Math.max(
+      ...SECTIONS.map((section) => {
+        const cfg = sectionHoursConfigs.find((c) => c.section === section);
+        return (cfg?.availableProductionHrs ?? 2000) - (cfg?.powerOff ?? 0);
+      }),
+      0,
+    );
     const approvedBds = breakdownRecords.filter(
       (r) => r.status === "approved-breakdown",
     );
@@ -268,13 +280,23 @@ export default function AnalysisPage() {
   }
 
   function getOverallMonthlyData() {
+    const currentMonthIndex = new Date().getMonth();
     return MONTH_NAMES.map((monthName, monthIdx) => {
-      const totalAvailHrs = SECTIONS.reduce((sum, section) => {
-        const cfg = sectionHoursConfigs.find((c) => c.section === section);
-        return (
-          sum + ((cfg?.availableProductionHrs ?? 2000) - (cfg?.powerOff ?? 0))
-        );
-      }, 0);
+      if (monthIdx > currentMonthIndex)
+        return {
+          month: monthName,
+          bdPct: null,
+          mttr: null,
+          mtbf: null,
+          uptime: null,
+        };
+      const totalAvailHrs = Math.max(
+        ...SECTIONS.map((section) => {
+          const cfg = sectionHoursConfigs.find((c) => c.section === section);
+          return (cfg?.availableProductionHrs ?? 2000) - (cfg?.powerOff ?? 0);
+        }),
+        0,
+      );
       const monthBds = breakdownRecords.filter((r) => {
         if (r.status !== "approved-breakdown") return false;
         const d = new Date(r.date);
@@ -576,6 +598,35 @@ export default function AnalysisPage() {
                 {/* Overall KPI Cards */}
                 {(() => {
                   const ov = getOverallPlantMetrics();
+                  const currentMonthNum = new Date().getMonth() + 1;
+                  const currentMonthBig = BigInt(currentMonthNum);
+                  const pmPlannedThisMonth = pmPlans.filter(
+                    (p) => p.month === currentMonthBig,
+                  ).length;
+                  const predictivePlannedThisMonth = predictivePlans.filter(
+                    (p) => {
+                      const d = new Date(p.scheduledDate);
+                      return (
+                        d.getFullYear() === CURRENT_YEAR &&
+                        d.getMonth() === new Date().getMonth()
+                      );
+                    },
+                  ).length;
+                  const bdCountThisMonth = breakdownRecords.filter((r) => {
+                    if (r.status !== "approved-breakdown") return false;
+                    const d = new Date(r.date);
+                    return (
+                      d.getFullYear() === CURRENT_YEAR &&
+                      d.getMonth() === new Date().getMonth()
+                    );
+                  }).length;
+                  const unplannedRatio =
+                    (bdCountThisMonth /
+                      Math.max(
+                        pmPlannedThisMonth + predictivePlannedThisMonth,
+                        1,
+                      )) *
+                    100;
                   const tgt = bdTargets.Overall ?? {
                     bdPct: 5,
                     mttr: 60,
@@ -621,6 +672,12 @@ export default function AnalysisPage() {
                       value: `${fmt(ov.uptime)}%`,
                       hint: `Target: ${tgt.uptime}%`,
                       color: ov.uptime >= tgt.uptime ? greenColor : redColor,
+                    },
+                    {
+                      label: "Unplanned %",
+                      value: `${fmt(unplannedRatio)}%`,
+                      hint: "BD Count / (PM + PDM Planned)",
+                      color: unplannedRatio < 20 ? greenColor : amberColor,
                     },
                   ];
                   return (

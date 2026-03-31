@@ -18,6 +18,7 @@ import {
   Cpu,
   Download,
   LayoutGrid,
+  Lightbulb,
   LogOut,
   Settings,
   Shield,
@@ -264,68 +265,56 @@ export default function DashboardPage() {
     });
   }, [pmPlans, pmRecords]);
 
-  // ---- Breakdown Section KPIs ----
-  const sectionKPIs = useMemo(() => {
-    return SECTIONS.map((section) => {
-      const sectionMachines = machines.filter((m) => m.section === section);
-      const sectionMachineIds = new Set(sectionMachines.map((m) => m.id));
-      const bds = breakdownRecords.filter(
-        (b) =>
-          sectionMachineIds.has(b.machineId) &&
-          b.status === "approved-breakdown",
-      );
-      const totalBDHours = bds.reduce(
-        (sum, b) => sum + b.durationMinutes / 60,
-        0,
-      );
-      const totalBDCount = bds.length;
-      const config = sectionHoursConfigs.find((c) => c.section === section);
-      const availableHours = config
-        ? config.availableProductionHrs - config.powerOff
-        : 2000;
+  // ---- Overall Plant Breakdown KPIs ----
+  const overallBdData = useMemo(() => {
+    const dashboardAvailHrs = Math.max(
+      ...sectionHoursConfigs.map(
+        (cfg) => cfg.availableProductionHrs - cfg.powerOff,
+      ),
+      1,
+    );
+    const approvedBds = breakdownRecords.filter(
+      (r) => r.status === "approved-breakdown",
+    );
+    const totalBdCount = approvedBds.length;
+    const totalBdHours = approvedBds.reduce(
+      (s, r) => s + r.durationMinutes / 60,
+      0,
+    );
+    const overallBdPct =
+      dashboardAvailHrs > 0 ? (totalBdHours / dashboardAvailHrs) * 100 : 0;
+    const overallMttr = totalBdCount > 0 ? totalBdHours / totalBdCount : 0;
+    const overallMtbf =
+      totalBdCount > 0
+        ? (dashboardAvailHrs - totalBdHours) / totalBdCount
+        : dashboardAvailHrs;
+    const overallUptime =
+      overallMttr + overallMtbf > 0
+        ? (overallMtbf / (overallMttr + overallMtbf)) * 100
+        : 100;
+    const currentMonthIdx = new Date().getMonth();
+    const monthlyData = MONTH_LABELS.map((month, idx) => {
+      if (idx > currentMonthIdx) return { month, bdPct: null };
+      const monthBds = approvedBds.filter((r) => {
+        const d = new Date(r.date);
+        return d.getFullYear() === currentYear && d.getMonth() === idx;
+      });
+      const mHours = monthBds.reduce((s, r) => s + r.durationMinutes / 60, 0);
       const bdPct =
-        availableHours > 0 ? (totalBDHours / availableHours) * 100 : 0;
-      const uptime = 100 - bdPct;
-      const mttr = totalBDCount > 0 ? totalBDHours / totalBDCount : 0;
-      const mtbf =
-        totalBDCount > 0 ? availableHours / totalBDCount : availableHours;
-      return { section, bdPct, uptime, mttr, mtbf, totalBDHours, totalBDCount };
+        dashboardAvailHrs > 0 ? (mHours / dashboardAvailHrs) * 100 : 0;
+      return { month, bdPct: Math.round(bdPct * 10) / 10 };
     });
-  }, [machines, breakdownRecords, sectionHoursConfigs]);
-
-  // Chart data for section-wise charts
-  const bdChartData = useMemo(() => {
-    return sectionKPIs.map((s) => ({
-      section: s.section.replace(" ", "\n"),
-      sectionFull: s.section,
-      actual: Math.round(s.bdPct * 10) / 10,
-      target: bdTargets[s.section as keyof BDTargets]?.bdPct ?? 5,
-    }));
-  }, [sectionKPIs, bdTargets]);
-
-  const mttrChartData = useMemo(() => {
-    return sectionKPIs.map((s) => ({
-      section: s.section.replace(" ", "\n"),
-      actual: Math.round(s.mttr * 10) / 10,
-      target: bdTargets[s.section as keyof BDTargets]?.mttr ?? 60,
-    }));
-  }, [sectionKPIs, bdTargets]);
-
-  const mtbfChartData = useMemo(() => {
-    return sectionKPIs.map((s) => ({
-      section: s.section.replace(" ", "\n"),
-      actual: Math.round(s.mtbf * 10) / 10,
-      target: bdTargets[s.section as keyof BDTargets]?.mtbf ?? 500,
-    }));
-  }, [sectionKPIs, bdTargets]);
-
-  const uptimeChartData = useMemo(() => {
-    return sectionKPIs.map((s) => ({
-      section: s.section.replace(" ", "\n"),
-      actual: Math.round(s.uptime * 10) / 10,
-      target: bdTargets[s.section as keyof BDTargets]?.uptime ?? 95,
-    }));
-  }, [sectionKPIs, bdTargets]);
+    return {
+      totalBdCount,
+      totalBdHours,
+      overallBdPct,
+      overallMttr,
+      overallMtbf,
+      overallUptime,
+      monthlyData,
+      dashboardAvailHrs,
+    };
+  }, [breakdownRecords, sectionHoursConfigs, currentYear]);
 
   // ---- Planner KPIs ----
   const tasksPending = useMemo(
@@ -427,7 +416,10 @@ export default function DashboardPage() {
                   page: "dashboard" as const,
                   active: true,
                 },
-                { label: "PM", page: "preventive" as const },
+                {
+                  label: "Preventive Maintenance",
+                  page: "preventive" as const,
+                },
                 { label: "Breakdown", page: "breakdown-panel" as const },
                 { label: "Analysis", page: "analysis" as const },
                 { label: "Tasks", page: "task-list" as const },
@@ -887,191 +879,145 @@ export default function DashboardPage() {
               </div>
             </SectionHeader>
 
-            {/* Section KPI cards */}
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-5">
-              {sectionKPIs.map((s, idx) => (
+            {/* Overall Plant KPI cards */}
+            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3 mb-5">
+              {[
+                {
+                  label: "BD Count",
+                  value: String(overallBdData.totalBdCount),
+                  good: overallBdData.totalBdCount === 0,
+                  target: null,
+                },
+                {
+                  label: "BD Hours",
+                  value: `${overallBdData.totalBdHours.toFixed(1)}h`,
+                  good: overallBdData.totalBdHours < 10,
+                  target: null,
+                },
+                {
+                  label: "BD%",
+                  value: `${overallBdData.overallBdPct.toFixed(1)}%`,
+                  good:
+                    overallBdData.overallBdPct <=
+                    (bdTargets.Overall?.bdPct ?? 5),
+                  target: bdTargets.Overall?.bdPct,
+                },
+                {
+                  label: "MTTR (h)",
+                  value: overallBdData.overallMttr.toFixed(1),
+                  good:
+                    overallBdData.overallMttr <=
+                    (bdTargets.Overall?.mttr ?? 60),
+                  target: bdTargets.Overall?.mttr,
+                },
+                {
+                  label: "MTBF (h)",
+                  value: overallBdData.overallMtbf.toFixed(0),
+                  good:
+                    overallBdData.overallMtbf >=
+                    (bdTargets.Overall?.mtbf ?? 500),
+                  target: bdTargets.Overall?.mtbf,
+                },
+                {
+                  label: "Uptime%",
+                  value: `${overallBdData.overallUptime.toFixed(1)}%`,
+                  good:
+                    overallBdData.overallUptime >=
+                    (bdTargets.Overall?.uptime ?? 95),
+                  target: bdTargets.Overall?.uptime,
+                },
+              ].map((kpi, idx) => (
                 <motion.div
-                  key={s.section}
-                  initial={{ opacity: 0, y: 16 }}
+                  key={kpi.label}
+                  initial={{ opacity: 0, y: 10 }}
                   animate={{ opacity: 1, y: 0 }}
-                  transition={{ delay: idx * 0.1 }}
-                  className="industrial-card p-4"
+                  transition={{ delay: idx * 0.05 }}
+                  className="industrial-card p-3"
                 >
-                  <div className="flex items-center justify-between mb-3">
-                    <h3
-                      className="text-sm font-bold"
-                      style={{ fontFamily: "BricolageGrotesque, sans-serif" }}
+                  <p
+                    className="text-xs mb-1"
+                    style={{ color: "oklch(0.55 0.010 260)" }}
+                  >
+                    {kpi.label}
+                  </p>
+                  <p
+                    className="text-xl font-bold"
+                    style={{
+                      color: kpi.good
+                        ? "oklch(0.75 0.13 145)"
+                        : "oklch(0.78 0.17 27)",
+                      fontFamily: "BricolageGrotesque, sans-serif",
+                    }}
+                  >
+                    {kpi.value}
+                  </p>
+                  {kpi.target !== null && kpi.target !== undefined && (
+                    <p
+                      className="text-xs mt-0.5"
+                      style={{ color: "oklch(0.45 0.010 260)" }}
                     >
-                      {s.section}
-                    </h3>
-                    <Zap
-                      className="w-4 h-4"
-                      style={{ color: "oklch(0.80 0.180 55)" }}
-                    />
-                  </div>
-                  <div className="grid grid-cols-2 gap-3">
-                    {[
-                      {
-                        label: "BD%",
-                        value: `${s.bdPct.toFixed(1)}%`,
-                        target: bdTargets[s.section as keyof BDTargets]?.bdPct,
-                        good:
-                          s.bdPct <=
-                          (bdTargets[s.section as keyof BDTargets]?.bdPct ?? 5),
-                      },
-                      {
-                        label: "Uptime%",
-                        value: `${s.uptime.toFixed(1)}%`,
-                        target: bdTargets[s.section as keyof BDTargets]?.uptime,
-                        good:
-                          s.uptime >=
-                          (bdTargets[s.section as keyof BDTargets]?.uptime ??
-                            95),
-                      },
-                      {
-                        label: "MTTR (h)",
-                        value: s.mttr.toFixed(1),
-                        target: bdTargets[s.section as keyof BDTargets]?.mttr,
-                        good:
-                          s.mttr <=
-                          (bdTargets[s.section as keyof BDTargets]?.mttr ?? 60),
-                      },
-                      {
-                        label: "MTBF (h)",
-                        value: s.mtbf.toFixed(0),
-                        target: bdTargets[s.section as keyof BDTargets]?.mtbf,
-                        good:
-                          s.mtbf >=
-                          (bdTargets[s.section as keyof BDTargets]?.mtbf ??
-                            500),
-                      },
-                    ].map((m) => (
-                      <div
-                        key={m.label}
-                        className="rounded-lg p-2"
-                        style={{ background: "oklch(0.19 0.020 255)" }}
-                      >
-                        <p
-                          className="text-xs"
-                          style={{ color: "oklch(0.55 0.010 260)" }}
-                        >
-                          {m.label}
-                        </p>
-                        <p
-                          className="text-lg font-bold"
-                          style={{
-                            color: m.good
-                              ? "oklch(0.75 0.13 145)"
-                              : "oklch(0.78 0.17 27)",
-                          }}
-                        >
-                          {m.value}
-                        </p>
-                        {m.target !== undefined && (
-                          <p
-                            className="text-xs"
-                            style={{ color: "oklch(0.45 0.010 260)" }}
-                          >
-                            Target: {m.target}
-                          </p>
-                        )}
-                      </div>
-                    ))}
-                  </div>
+                      Target: {kpi.target}
+                    </p>
+                  )}
                 </motion.div>
               ))}
             </div>
 
-            {/* 4 Section-wise Charts */}
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              {[
-                {
-                  title: "BD% (Breakdown %)",
-                  data: bdChartData,
-                  dataKey: "actual",
-                  targetKey: "target",
-                  color: "oklch(0.78 0.17 27)",
-                  unit: "%",
-                },
-                {
-                  title: "MTTR (Mean Time to Repair)",
-                  data: mttrChartData,
-                  dataKey: "actual",
-                  targetKey: "target",
-                  color: "oklch(0.70 0.13 245)",
-                  unit: "h",
-                },
-                {
-                  title: "MTBF (Mean Time Between Failures)",
-                  data: mtbfChartData,
-                  dataKey: "actual",
-                  targetKey: "target",
-                  color: "oklch(0.75 0.13 145)",
-                  unit: "h",
-                },
-                {
-                  title: "Uptime %",
-                  data: uptimeChartData,
-                  dataKey: "actual",
-                  targetKey: "target",
-                  color: "oklch(0.80 0.180 55)",
-                  unit: "%",
-                },
-              ].map((chart) => (
-                <div key={chart.title} className="industrial-card p-4">
-                  <div className="flex items-center justify-between mb-3">
-                    <h3
-                      className="text-xs font-semibold"
-                      style={{ color: "oklch(0.75 0.008 260)" }}
-                    >
-                      {chart.title}
-                    </h3>
-                    <Target
-                      className="w-4 h-4"
-                      style={{ color: "oklch(0.55 0.010 260)" }}
-                    />
-                  </div>
-                  <ResponsiveContainer width="100%" height={160}>
-                    <ComposedChart
-                      data={chart.data}
-                      margin={{ top: 4, right: 8, left: -10, bottom: 0 }}
-                    >
-                      <CartesianGrid
-                        strokeDasharray="3 3"
-                        stroke="oklch(0.34 0.030 252 / 0.4)"
-                      />
-                      <XAxis
-                        dataKey="section"
-                        tick={{ fill: "oklch(0.55 0.010 260)", fontSize: 10 }}
-                        axisLine={false}
-                        tickLine={false}
-                      />
-                      <YAxis
-                        tick={{ fill: "oklch(0.55 0.010 260)", fontSize: 10 }}
-                        axisLine={false}
-                        tickLine={false}
-                      />
-                      <Tooltip content={<CustomTooltip />} />
-                      <Bar
-                        dataKey="actual"
-                        name="Actual"
-                        fill={chart.color}
-                        radius={[3, 3, 0, 0]}
-                        opacity={0.85}
-                      />
-                      <Line
-                        type="monotone"
-                        dataKey="target"
-                        name="Target"
-                        stroke="oklch(0.80 0.180 55)"
-                        strokeWidth={2}
-                        strokeDasharray="5 3"
-                        dot={{ fill: "oklch(0.80 0.180 55)", r: 4 }}
-                      />
-                    </ComposedChart>
-                  </ResponsiveContainer>
-                </div>
-              ))}
+            {/* Overall Plant BD% Monthly Trend */}
+            <div className="industrial-card p-4">
+              <div className="flex items-center justify-between mb-3">
+                <h3
+                  className="text-xs font-semibold"
+                  style={{ color: "oklch(0.75 0.008 260)" }}
+                >
+                  Overall Plant BD% — Monthly Trend ({new Date().getFullYear()})
+                </h3>
+                <Target
+                  className="w-4 h-4"
+                  style={{ color: "oklch(0.55 0.010 260)" }}
+                />
+              </div>
+              <ResponsiveContainer width="100%" height={180}>
+                <ComposedChart
+                  data={overallBdData.monthlyData}
+                  margin={{ top: 4, right: 8, left: -10, bottom: 0 }}
+                >
+                  <CartesianGrid
+                    strokeDasharray="3 3"
+                    stroke="oklch(0.34 0.030 252 / 0.4)"
+                  />
+                  <XAxis
+                    dataKey="month"
+                    tick={{ fill: "oklch(0.55 0.010 260)", fontSize: 10 }}
+                    axisLine={false}
+                    tickLine={false}
+                  />
+                  <YAxis
+                    tick={{ fill: "oklch(0.55 0.010 260)", fontSize: 10 }}
+                    axisLine={false}
+                    tickLine={false}
+                  />
+                  <Tooltip content={<CustomTooltip />} />
+                  <Bar
+                    dataKey="bdPct"
+                    name="BD%"
+                    fill="oklch(0.78 0.17 27)"
+                    radius={[3, 3, 0, 0]}
+                    opacity={0.85}
+                  />
+                  <ReferenceLine
+                    y={bdTargets.Overall?.bdPct ?? 5}
+                    stroke="oklch(0.80 0.180 55)"
+                    strokeDasharray="5 3"
+                    strokeWidth={2}
+                    label={{
+                      value: "Target",
+                      fill: "oklch(0.80 0.180 55)",
+                      fontSize: 10,
+                    }}
+                  />
+                </ComposedChart>
+              </ResponsiveContainer>
             </div>
           </section>
 
@@ -1268,6 +1214,15 @@ export default function DashboardPage() {
                   border: "oklch(0.44 0.13 245 / 0.3)",
                   action: () => navigate("task-list"),
                   ocid: "quickaction.task_list.button",
+                },
+                {
+                  label: "Kaizen",
+                  icon: Lightbulb,
+                  color: "oklch(0.75 0.16 290)",
+                  bg: "oklch(0.45 0.12 290 / 0.12)",
+                  border: "oklch(0.55 0.14 290 / 0.3)",
+                  action: () => navigate("kaizen"),
+                  ocid: "quickaction.kaizen.button",
                 },
               ]
                 .filter((item) => !item.adminOnly || user?.role === "admin")

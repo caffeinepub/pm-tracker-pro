@@ -67,6 +67,7 @@ export interface BreakdownRecord {
   isInHistory: boolean;
   adminRemarks?: string;
   submittedAt: number;
+  photoDataUrl?: string;
 }
 
 export interface CAPARecord {
@@ -142,6 +143,99 @@ export interface BDTargets {
   Overall: { bdPct: number; mttr: number; mtbf: number; uptime: number };
 }
 
+export interface KaizenRecord {
+  id: string;
+  title: string;
+  category:
+    | "Safety"
+    | "Quality"
+    | "Cost"
+    | "Delivery"
+    | "Environment"
+    | "Other";
+  machineArea: string;
+  problemDescription: string;
+  improvementDescription: string;
+  beforePhotoDataUrl?: string;
+  afterPhotoDataUrl?: string;
+  submittedBy: string;
+  submittedByUsername: string;
+  submittedAt: number;
+  status: "Open" | "Closed";
+  closedAt?: number;
+  closedRemarks?: string;
+}
+
+export interface PredictivePlan {
+  id: string;
+  machineId: string;
+  machineName: string;
+  scheduledDate: string;
+  frequency: "Monthly" | "Quarterly" | "Half-Yearly" | "Yearly";
+  parameters: string[];
+  notes: string;
+  createdAt: number;
+}
+
+export interface PredictiveRecord {
+  id: string;
+  planId: string;
+  machineId: string;
+  machineName: string;
+  date: string;
+  readings: Record<string, string>;
+  remarks: string;
+  operatorName: string;
+  operatorUsername: string;
+  status: "pending-approval" | "completed" | "rejected";
+  submittedAt: number;
+}
+
+export interface ElectricityMeter {
+  id: string;
+  name: string;
+  location: string;
+  multiplier: number;
+  unit: string;
+  createdAt: number;
+}
+
+export interface MeterReading {
+  id: string;
+  meterId: string;
+  meterName: string;
+  date: string;
+  startReading: number;
+  endReading: number;
+  consumption: number;
+  enteredBy: string;
+  enteredByUsername: string;
+  submittedAt: number;
+}
+
+export interface LogbookCheckItem {
+  id: string;
+  description: string;
+  category: string;
+  createdAt: number;
+}
+
+export interface LogbookEntry {
+  id: string;
+  date: string;
+  operatorName: string;
+  operatorUsername: string;
+  items: Array<{
+    checkItemId: string;
+    description: string;
+    status: "OK" | "Not OK" | "NA";
+    remark: string;
+    photoDataUrl?: string;
+  }>;
+  generalRemarks: string;
+  submittedAt: number;
+}
+
 const DEFAULT_BD_TARGETS: BDTargets = {
   "Powder Coating": { bdPct: 5, mttr: 60, mtbf: 500, uptime: 95 },
   "Machine Shop": { bdPct: 5, mttr: 60, mtbf: 500, uptime: 95 },
@@ -159,6 +253,13 @@ const CAPA_KEY = "pm_tracker_capa";
 const SECTION_HOURS_KEY = "pm_tracker_section_hours";
 const TASKS_KEY = "pm_tracker_tasks";
 const BD_TARGETS_KEY = "pm_tracker_bd_targets";
+const KAIZEN_KEY = "pm_tracker_kaizen";
+const PREDICTIVE_PLANS_KEY = "pm_tracker_predictive_plans";
+const PREDICTIVE_RECORDS_KEY = "pm_tracker_predictive_records";
+const ELECTRICITY_METERS_KEY = "pm_tracker_electricity_meters";
+const METER_READINGS_KEY = "pm_tracker_meter_readings";
+const LOGBOOK_ITEMS_KEY = "pm_tracker_logbook_items";
+const LOGBOOK_ENTRIES_KEY = "pm_tracker_logbook_entries";
 
 const DEFAULT_SECTION_HOURS: SectionHoursConfig[] = [
   { section: "Powder Coating", availableProductionHrs: 2000, powerOff: 0 },
@@ -266,6 +367,39 @@ type AppContextType = {
   importTasks: (records: TaskRecord[]) => void;
   bdTargets: BDTargets;
   updateBDTargets: (targets: Partial<BDTargets>) => void;
+  // Kaizen
+  kaizenRecords: KaizenRecord[];
+  addKaizen: (k: KaizenRecord) => void;
+  updateKaizen: (id: string, updates: Partial<KaizenRecord>) => void;
+  // Predictive
+  predictivePlans: PredictivePlan[];
+  predictiveRecords: PredictiveRecord[];
+  addPredictivePlan: (p: PredictivePlan) => void;
+  updatePredictivePlan: (id: string, updates: Partial<PredictivePlan>) => void;
+  deletePredictivePlan: (id: string) => void;
+  submitPredictiveRecord: (r: PredictiveRecord) => void;
+  approvePredictiveRecord: (id: string) => void;
+  // Electricity
+  electricityMeters: ElectricityMeter[];
+  meterReadings: MeterReading[];
+  addElectricityMeter: (m: ElectricityMeter) => void;
+  updateElectricityMeter: (
+    id: string,
+    updates: Partial<ElectricityMeter>,
+  ) => void;
+  deleteElectricityMeter: (id: string) => void;
+  addMeterReading: (r: MeterReading) => void;
+  deleteMeterReading: (id: string) => void;
+  // Logbook
+  logbookCheckItems: LogbookCheckItem[];
+  logbookEntries: LogbookEntry[];
+  addLogbookCheckItem: (item: LogbookCheckItem) => void;
+  updateLogbookCheckItem: (
+    id: string,
+    updates: Partial<LogbookCheckItem>,
+  ) => void;
+  deleteLogbookCheckItem: (id: string) => void;
+  submitLogbookEntry: (entry: LogbookEntry) => void;
 };
 
 export type PageName =
@@ -279,7 +413,11 @@ export type PageName =
   | "breakdown"
   | "capa"
   | "history"
-  | "task-list";
+  | "task-list"
+  | "kaizen"
+  | "predictive"
+  | "electricity"
+  | "logbook";
 
 export interface NavParams {
   machineId?: string;
@@ -376,6 +514,63 @@ export function AppProvider({ children }: { children: ReactNode }) {
     } catch {}
     return DEFAULT_BD_TARGETS;
   });
+  const [kaizenRecords, setKaizenRecords] = useState<KaizenRecord[]>(() => {
+    try {
+      const r = localStorage.getItem(KAIZEN_KEY);
+      if (r) return JSON.parse(r);
+    } catch {}
+    return [];
+  });
+  const [predictivePlans, setPredictivePlans] = useState<PredictivePlan[]>(
+    () => {
+      try {
+        const r = localStorage.getItem(PREDICTIVE_PLANS_KEY);
+        if (r) return JSON.parse(r);
+      } catch {}
+      return [];
+    },
+  );
+  const [predictiveRecords, setPredictiveRecords] = useState<
+    PredictiveRecord[]
+  >(() => {
+    try {
+      const r = localStorage.getItem(PREDICTIVE_RECORDS_KEY);
+      if (r) return JSON.parse(r);
+    } catch {}
+    return [];
+  });
+  const [electricityMeters, setElectricityMeters] = useState<
+    ElectricityMeter[]
+  >(() => {
+    try {
+      const r = localStorage.getItem(ELECTRICITY_METERS_KEY);
+      if (r) return JSON.parse(r);
+    } catch {}
+    return [];
+  });
+  const [meterReadings, setMeterReadings] = useState<MeterReading[]>(() => {
+    try {
+      const r = localStorage.getItem(METER_READINGS_KEY);
+      if (r) return JSON.parse(r);
+    } catch {}
+    return [];
+  });
+  const [logbookCheckItems, setLogbookCheckItems] = useState<
+    LogbookCheckItem[]
+  >(() => {
+    try {
+      const r = localStorage.getItem(LOGBOOK_ITEMS_KEY);
+      if (r) return JSON.parse(r);
+    } catch {}
+    return [];
+  });
+  const [logbookEntries, setLogbookEntries] = useState<LogbookEntry[]>(() => {
+    try {
+      const r = localStorage.getItem(LOGBOOK_ENTRIES_KEY);
+      if (r) return JSON.parse(r);
+    } catch {}
+    return [];
+  });
 
   // biome-ignore lint/correctness/useExhaustiveDependencies: intentionally only run on login
   useEffect(() => {
@@ -429,6 +624,33 @@ export function AppProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     localStorage.setItem(BD_TARGETS_KEY, JSON.stringify(bdTargets));
   }, [bdTargets]);
+  useEffect(() => {
+    localStorage.setItem(KAIZEN_KEY, JSON.stringify(kaizenRecords));
+  }, [kaizenRecords]);
+  useEffect(() => {
+    localStorage.setItem(PREDICTIVE_PLANS_KEY, JSON.stringify(predictivePlans));
+  }, [predictivePlans]);
+  useEffect(() => {
+    localStorage.setItem(
+      PREDICTIVE_RECORDS_KEY,
+      JSON.stringify(predictiveRecords),
+    );
+  }, [predictiveRecords]);
+  useEffect(() => {
+    localStorage.setItem(
+      ELECTRICITY_METERS_KEY,
+      JSON.stringify(electricityMeters),
+    );
+  }, [electricityMeters]);
+  useEffect(() => {
+    localStorage.setItem(METER_READINGS_KEY, JSON.stringify(meterReadings));
+  }, [meterReadings]);
+  useEffect(() => {
+    localStorage.setItem(LOGBOOK_ITEMS_KEY, JSON.stringify(logbookCheckItems));
+  }, [logbookCheckItems]);
+  useEffect(() => {
+    localStorage.setItem(LOGBOOK_ENTRIES_KEY, JSON.stringify(logbookEntries));
+  }, [logbookEntries]);
 
   const login = useCallback((username: string, password: string): boolean => {
     const users = loadUsers();
@@ -953,6 +1175,123 @@ export function AppProvider({ children }: { children: ReactNode }) {
     setBdTargets((prev) => ({ ...prev, ...targets }));
   }, []);
 
+  // Kaizen
+  const addKaizen = useCallback((k: KaizenRecord) => {
+    setKaizenRecords((prev) => [...prev, k]);
+    setNotifications((prev) => [
+      {
+        id: `notif-kaizen-${Date.now()}`,
+        message: `💡 New Kaizen submitted by ${k.submittedBy}: "${k.title}"`,
+        timestamp: Date.now(),
+        read: false,
+      },
+      ...prev,
+    ]);
+  }, []);
+
+  const updateKaizen = useCallback(
+    (id: string, updates: Partial<KaizenRecord>) => {
+      setKaizenRecords((prev) =>
+        prev.map((k) => (k.id === id ? { ...k, ...updates } : k)),
+      );
+    },
+    [],
+  );
+
+  // Predictive
+  const addPredictivePlan = useCallback((p: PredictivePlan) => {
+    setPredictivePlans((prev) => [...prev, p]);
+  }, []);
+
+  const updatePredictivePlan = useCallback(
+    (id: string, updates: Partial<PredictivePlan>) => {
+      setPredictivePlans((prev) =>
+        prev.map((p) => (p.id === id ? { ...p, ...updates } : p)),
+      );
+    },
+    [],
+  );
+
+  const deletePredictivePlan = useCallback((id: string) => {
+    setPredictivePlans((prev) => prev.filter((p) => p.id !== id));
+  }, []);
+
+  const submitPredictiveRecord = useCallback((r: PredictiveRecord) => {
+    setPredictiveRecords((prev) => [...prev, r]);
+    setNotifications((prev) => [
+      {
+        id: `notif-pdm-${Date.now()}`,
+        message: `📊 Predictive reading submitted for ${r.machineName}`,
+        timestamp: Date.now(),
+        read: false,
+      },
+      ...prev,
+    ]);
+  }, []);
+
+  const approvePredictiveRecord = useCallback((id: string) => {
+    setPredictiveRecords((prev) =>
+      prev.map((r) => (r.id === id ? { ...r, status: "completed" } : r)),
+    );
+  }, []);
+
+  // Electricity
+  const addElectricityMeter = useCallback((m: ElectricityMeter) => {
+    setElectricityMeters((prev) => [...prev, m]);
+  }, []);
+
+  const updateElectricityMeter = useCallback(
+    (id: string, updates: Partial<ElectricityMeter>) => {
+      setElectricityMeters((prev) =>
+        prev.map((m) => (m.id === id ? { ...m, ...updates } : m)),
+      );
+    },
+    [],
+  );
+
+  const deleteElectricityMeter = useCallback((id: string) => {
+    setElectricityMeters((prev) => prev.filter((m) => m.id !== id));
+  }, []);
+
+  const addMeterReading = useCallback((r: MeterReading) => {
+    setMeterReadings((prev) => [...prev, r]);
+  }, []);
+
+  const deleteMeterReading = useCallback((id: string) => {
+    setMeterReadings((prev) => prev.filter((r) => r.id !== id));
+  }, []);
+
+  // Logbook
+  const addLogbookCheckItem = useCallback((item: LogbookCheckItem) => {
+    setLogbookCheckItems((prev) => [...prev, item]);
+  }, []);
+
+  const updateLogbookCheckItem = useCallback(
+    (id: string, updates: Partial<LogbookCheckItem>) => {
+      setLogbookCheckItems((prev) =>
+        prev.map((i) => (i.id === id ? { ...i, ...updates } : i)),
+      );
+    },
+    [],
+  );
+
+  const deleteLogbookCheckItem = useCallback((id: string) => {
+    setLogbookCheckItems((prev) => prev.filter((i) => i.id !== id));
+  }, []);
+
+  const submitLogbookEntry = useCallback((entry: LogbookEntry) => {
+    setLogbookEntries((prev) => [...prev, entry]);
+    setNotifications((prev) => [
+      {
+        id: `notif-logbook-${Date.now()}`,
+        message: `📓 Logbook entry submitted by ${entry.operatorName} for ${entry.date}`,
+        timestamp: Date.now(),
+        read: false,
+      },
+      ...prev,
+    ]);
+  }, []);
+
   return (
     <AppContext.Provider
       value={{
@@ -1011,6 +1350,29 @@ export function AppProvider({ children }: { children: ReactNode }) {
         importTasks,
         bdTargets,
         updateBDTargets,
+        kaizenRecords,
+        addKaizen,
+        updateKaizen,
+        predictivePlans,
+        predictiveRecords,
+        addPredictivePlan,
+        updatePredictivePlan,
+        deletePredictivePlan,
+        submitPredictiveRecord,
+        approvePredictiveRecord,
+        electricityMeters,
+        meterReadings,
+        addElectricityMeter,
+        updateElectricityMeter,
+        deleteElectricityMeter,
+        addMeterReading,
+        deleteMeterReading,
+        logbookCheckItems,
+        logbookEntries,
+        addLogbookCheckItem,
+        updateLogbookCheckItem,
+        deleteLogbookCheckItem,
+        submitLogbookEntry,
       }}
     >
       {children}

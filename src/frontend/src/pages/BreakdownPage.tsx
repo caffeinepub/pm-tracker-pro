@@ -102,6 +102,7 @@ const EMPTY_FORM = {
   affectedPart: "",
   temporaryAction: "",
   breakdownType: "Breakdown" as BreakdownRecord["breakdownType"],
+  photoDataUrl: "",
 };
 
 const XLSX = (window as any).XLSX;
@@ -226,10 +227,11 @@ export default function BreakdownPage() {
       isInCapa: false,
       isInHistory: false,
       submittedAt: Date.now(),
+      photoDataUrl: form.photoDataUrl || undefined,
     };
     submitBreakdown(record);
     toast.success("Breakdown slip submitted for approval");
-    setForm(EMPTY_FORM);
+    setForm({ ...EMPTY_FORM, photoDataUrl: "" });
     setShowForm(false);
   }
 
@@ -729,6 +731,42 @@ export default function BreakdownPage() {
                     />
                   </div>
 
+                  {/* Photo Upload */}
+                  <div className="space-y-1.5 sm:col-span-2">
+                    <Label
+                      className="text-xs"
+                      style={{ color: "oklch(0.65 0.010 260)" }}
+                    >
+                      Photo (optional)
+                    </Label>
+                    <input
+                      type="file"
+                      accept="image/*"
+                      onChange={(e) => {
+                        const file = e.target.files?.[0];
+                        if (!file) return;
+                        const reader = new FileReader();
+                        reader.onload = (ev) => {
+                          setForm((prev) => ({
+                            ...prev,
+                            photoDataUrl: (ev.target?.result as string) ?? "",
+                          }));
+                        };
+                        reader.readAsDataURL(file);
+                      }}
+                      className="block w-full text-sm mt-1"
+                      style={{ color: "oklch(0.68 0.010 260)" }}
+                      data-ocid="breakdown.upload_button"
+                    />
+                    {form.photoDataUrl && (
+                      <img
+                        src={form.photoDataUrl}
+                        alt="Preview"
+                        className="mt-2 rounded-lg max-h-32 object-cover"
+                      />
+                    )}
+                  </div>
+
                   {/* Operator */}
                   <div className="space-y-1.5 sm:col-span-2">
                     <Label
@@ -910,6 +948,7 @@ export default function BreakdownPage() {
                           "Operator",
                           "Status",
                           "Flags",
+                          "Photo",
                         ].map((h) => (
                           <TableHead
                             key={h}
@@ -985,6 +1024,18 @@ export default function BreakdownPage() {
                                 </span>
                               )}
                             </div>
+                          </TableCell>
+                          <TableCell>
+                            {r.photoDataUrl && (
+                              <img
+                                src={r.photoDataUrl}
+                                alt="Breakdown attachment"
+                                className="rounded max-h-10 max-w-[60px] object-cover"
+                                style={{
+                                  border: "1px solid oklch(0.34 0.030 252)",
+                                }}
+                              />
+                            )}
                           </TableCell>
                         </TableRow>
                       ))}
