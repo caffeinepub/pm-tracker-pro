@@ -8,10 +8,22 @@ import {
 } from "react";
 import type { ChecklistTemplate, Machine, PMPlan, PMRecord } from "../backend";
 import {
+  DEMO_BREAKDOWN_RECORDS,
+  DEMO_CAPA_RECORDS,
   DEMO_CHECKLIST_TEMPLATES,
+  DEMO_ELECTRICITY_METERS,
+  DEMO_HISTORY_CARDS,
+  DEMO_KAIZEN_RECORDS,
+  DEMO_LOGBOOK_CHECK_ITEMS,
+  DEMO_LOGBOOK_ENTRIES,
   DEMO_MACHINES,
+  DEMO_METER_READINGS,
   DEMO_PM_PLANS,
   DEMO_PM_RECORDS,
+  DEMO_PREDICTIVE_PLANS,
+  DEMO_PREDICTIVE_RECORDS,
+  DEMO_SPARE_ITEMS,
+  DEMO_TASK_RECORDS,
 } from "../data/demoData";
 
 export interface AppUser {
@@ -209,6 +221,7 @@ export interface ElectricityMeter {
   unit: string;
   multiplier: number;
   location: string;
+  includeInKpi: boolean;
   createdAt: number;
 }
 
@@ -530,10 +543,10 @@ export function AppProvider({ children }: { children: ReactNode }) {
         const r = localStorage.getItem(BREAKDOWN_KEY);
         if (r) {
           const parsed = JSON.parse(r);
-          return Array.isArray(parsed) ? parsed : [];
+          return Array.isArray(parsed) ? parsed : DEMO_BREAKDOWN_RECORDS;
         }
       } catch {}
-      return [];
+      return DEMO_BREAKDOWN_RECORDS;
     },
   );
   const [capaRecords, setCapaRecords] = useState<CAPARecord[]>(() => {
@@ -541,20 +554,20 @@ export function AppProvider({ children }: { children: ReactNode }) {
       const r = localStorage.getItem(CAPA_KEY);
       if (r) {
         const parsed = JSON.parse(r);
-        return Array.isArray(parsed) ? parsed : [];
+        return Array.isArray(parsed) ? parsed : DEMO_CAPA_RECORDS;
       }
     } catch {}
-    return [];
+    return DEMO_CAPA_RECORDS;
   });
   const [historyCards, setHistoryCards] = useState<HistoryCardEntry[]>(() => {
     try {
       const r = localStorage.getItem(HISTORY_KEY);
       if (r) {
         const parsed = JSON.parse(r);
-        return Array.isArray(parsed) ? parsed : [];
+        return Array.isArray(parsed) ? parsed : DEMO_HISTORY_CARDS;
       }
     } catch {}
-    return [];
+    return DEMO_HISTORY_CARDS;
   });
   const [sectionHoursConfigs, setSectionHoursConfigs] = useState<
     SectionHoursConfig[]
@@ -582,10 +595,10 @@ export function AppProvider({ children }: { children: ReactNode }) {
       const r = localStorage.getItem(TASKS_KEY);
       if (r) {
         const parsed = JSON.parse(r);
-        return Array.isArray(parsed) ? parsed : [];
+        return Array.isArray(parsed) ? parsed : DEMO_TASK_RECORDS;
       }
     } catch {}
-    return [];
+    return DEMO_TASK_RECORDS;
   });
   const [bdTargets, setBdTargets] = useState<BDTargets>(() => {
     try {
@@ -599,10 +612,10 @@ export function AppProvider({ children }: { children: ReactNode }) {
       const r = localStorage.getItem(KAIZEN_KEY);
       if (r) {
         const parsed = JSON.parse(r);
-        return Array.isArray(parsed) ? parsed : [];
+        return Array.isArray(parsed) ? parsed : DEMO_KAIZEN_RECORDS;
       }
     } catch {}
-    return [];
+    return DEMO_KAIZEN_RECORDS;
   });
   const [predictivePlans, setPredictivePlans] = useState<PredictivePlan[]>(
     () => {
@@ -610,10 +623,10 @@ export function AppProvider({ children }: { children: ReactNode }) {
         const r = localStorage.getItem(PREDICTIVE_PLANS_KEY);
         if (r) {
           const parsed = JSON.parse(r);
-          return Array.isArray(parsed) ? parsed : [];
+          return Array.isArray(parsed) ? parsed : DEMO_PREDICTIVE_PLANS;
         }
       } catch {}
-      return [];
+      return DEMO_PREDICTIVE_PLANS;
     },
   );
   const [predictiveRecords, setPredictiveRecords] = useState<
@@ -623,10 +636,10 @@ export function AppProvider({ children }: { children: ReactNode }) {
       const r = localStorage.getItem(PREDICTIVE_RECORDS_KEY);
       if (r) {
         const parsed = JSON.parse(r);
-        return Array.isArray(parsed) ? parsed : [];
+        return Array.isArray(parsed) ? parsed : DEMO_PREDICTIVE_RECORDS;
       }
     } catch {}
-    return [];
+    return DEMO_PREDICTIVE_RECORDS;
   });
   const [electricityMeters, setElectricityMeters] = useState<
     ElectricityMeter[]
@@ -635,20 +648,20 @@ export function AppProvider({ children }: { children: ReactNode }) {
       const r = localStorage.getItem(ELECTRICITY_METERS_KEY);
       if (r) {
         const parsed = JSON.parse(r);
-        return Array.isArray(parsed) ? parsed : [];
+        return Array.isArray(parsed) ? parsed : DEMO_ELECTRICITY_METERS;
       }
     } catch {}
-    return [];
+    return DEMO_ELECTRICITY_METERS;
   });
   const [meterReadings, setMeterReadings] = useState<MeterReading[]>(() => {
     try {
       const r = localStorage.getItem(METER_READINGS_KEY);
       if (r) {
         const parsed = JSON.parse(r);
-        return Array.isArray(parsed) ? parsed : [];
+        return Array.isArray(parsed) ? parsed : DEMO_METER_READINGS;
       }
     } catch {}
-    return [];
+    return DEMO_METER_READINGS;
   });
   const [logbookCheckItems, setLogbookCheckItems] = useState<
     LogbookCheckItem[]
@@ -657,20 +670,20 @@ export function AppProvider({ children }: { children: ReactNode }) {
       const r = localStorage.getItem(LOGBOOK_ITEMS_KEY);
       if (r) {
         const parsed = JSON.parse(r);
-        return Array.isArray(parsed) ? parsed : [];
+        return Array.isArray(parsed) ? parsed : DEMO_LOGBOOK_CHECK_ITEMS;
       }
     } catch {}
-    return [];
+    return DEMO_LOGBOOK_CHECK_ITEMS;
   });
   const [logbookEntries, setLogbookEntries] = useState<LogbookEntry[]>(() => {
     try {
       const r = localStorage.getItem(LOGBOOK_ENTRIES_KEY);
       if (r) {
         const parsed = JSON.parse(r);
-        return Array.isArray(parsed) ? parsed : [];
+        return Array.isArray(parsed) ? parsed : DEMO_LOGBOOK_ENTRIES;
       }
     } catch {}
-    return [];
+    return DEMO_LOGBOOK_ENTRIES;
   });
 
   // biome-ignore lint/correctness/useExhaustiveDependencies: intentionally only run on login
@@ -757,10 +770,10 @@ export function AppProvider({ children }: { children: ReactNode }) {
       const r = localStorage.getItem(SPARES_KEY);
       if (r) {
         const parsed = JSON.parse(r);
-        return Array.isArray(parsed) ? parsed : [];
+        return Array.isArray(parsed) ? parsed : DEMO_SPARE_ITEMS;
       }
     } catch {}
-    return [];
+    return DEMO_SPARE_ITEMS;
   });
   const [pmSpareUsage, setPmSpareUsage] = useState<PMSpareUsage[]>(() => {
     try {

@@ -30,13 +30,6 @@ export default function DesktopNav() {
       ocid: "desktop_nav.dashboard.link",
     },
     {
-      label: "Preventive",
-      icon: ClipboardList,
-      action: () => navigate("preventive"),
-      active: isActive(["preventive", "checklist"]),
-      ocid: "desktop_nav.preventive.link",
-    },
-    {
       label: "Breakdown",
       icon: AlertTriangle,
       action: () => navigate("breakdown-panel"),
@@ -49,6 +42,20 @@ export default function DesktopNav() {
       action: () => navigate("analysis"),
       active: isActive(["analysis"]),
       ocid: "desktop_nav.analysis.link",
+    },
+    {
+      label: "Preventive",
+      icon: ClipboardList,
+      action: () => navigate("preventive"),
+      active: isActive(["preventive", "checklist"]),
+      ocid: "desktop_nav.preventive.link",
+    },
+    {
+      label: "Predictive",
+      icon: Gauge,
+      action: () => navigate("predictive"),
+      active: isActive(["predictive"]),
+      ocid: "desktop_nav.predictive.link",
     },
     {
       label: "Tasks",
@@ -65,13 +72,6 @@ export default function DesktopNav() {
       ocid: "desktop_nav.kaizen.link",
     },
     {
-      label: "Predictive",
-      icon: Gauge,
-      action: () => navigate("predictive"),
-      active: isActive(["predictive"]),
-      ocid: "desktop_nav.predictive.link",
-    },
-    {
       label: "Electricity",
       icon: Zap,
       action: () => navigate("electricity"),
@@ -79,18 +79,18 @@ export default function DesktopNav() {
       ocid: "desktop_nav.electricity.link",
     },
     {
-      label: "Logbook",
-      icon: BookOpen,
-      action: () => navigate("logbook"),
-      active: isActive(["logbook"]),
-      ocid: "desktop_nav.logbook.link",
-    },
-    {
       label: "Spares",
       icon: Package,
       action: () => navigate("spares"),
       active: isActive(["spares"]),
       ocid: "desktop_nav.spares.link",
+    },
+    {
+      label: "Logbook",
+      icon: BookOpen,
+      action: () => navigate("logbook"),
+      active: isActive(["logbook"]),
+      ocid: "desktop_nav.logbook.link",
     },
     ...(user.role === "admin"
       ? [

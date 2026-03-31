@@ -57,12 +57,12 @@ const CATEGORIES: KaizenRecord["category"][] = [
 ];
 
 const CATEGORY_COLORS: Record<string, string> = {
-  Safety: "oklch(0.78 0.17 27)",
-  Quality: "oklch(0.75 0.13 145)",
-  Cost: "oklch(0.80 0.180 55)",
-  Delivery: "oklch(0.65 0.150 232)",
-  Environment: "oklch(0.72 0.14 160)",
-  Other: "oklch(0.68 0.010 260)",
+  Safety: "#e8613a",
+  Quality: "#3aad6e",
+  Cost: "#e8a53a",
+  Delivery: "#3a7ae8",
+  Environment: "#3ac47a",
+  Other: "#8890a8",
 };
 
 const STATUS_COLORS: Record<
@@ -1067,6 +1067,7 @@ export default function KaizenPage() {
                                 color: CATEGORY_COLORS[k.category],
                                 border: `1px solid ${CATEGORY_COLORS[k.category]}55`,
                                 fontSize: "11px",
+                                fontWeight: 700,
                               }}
                             >
                               {k.category}

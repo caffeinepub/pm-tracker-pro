@@ -30,13 +30,6 @@ export default function BottomNav() {
       ocid: "bottom_nav.dashboard.link",
     },
     {
-      label: "PM",
-      icon: ClipboardList,
-      action: () => navigate("preventive"),
-      active: isActive(["preventive", "checklist"]),
-      ocid: "bottom_nav.preventive.link",
-    },
-    {
       label: "Breakdown",
       icon: AlertTriangle,
       action: () => navigate("breakdown-panel"),
@@ -49,6 +42,20 @@ export default function BottomNav() {
       action: () => navigate("analysis"),
       active: isActive(["analysis"]),
       ocid: "bottom_nav.analysis.link",
+    },
+    {
+      label: "PM",
+      icon: ClipboardList,
+      action: () => navigate("preventive"),
+      active: isActive(["preventive", "checklist"]),
+      ocid: "bottom_nav.preventive.link",
+    },
+    {
+      label: "PDM",
+      icon: Gauge,
+      action: () => navigate("predictive"),
+      active: isActive(["predictive"]),
+      ocid: "bottom_nav.predictive.link",
     },
     {
       label: "Tasks",
@@ -65,13 +72,6 @@ export default function BottomNav() {
       ocid: "bottom_nav.kaizen.link",
     },
     {
-      label: "PDM",
-      icon: Gauge,
-      action: () => navigate("predictive"),
-      active: isActive(["predictive"]),
-      ocid: "bottom_nav.predictive.link",
-    },
-    {
       label: "Power",
       icon: Zap,
       action: () => navigate("electricity"),
@@ -79,18 +79,18 @@ export default function BottomNav() {
       ocid: "bottom_nav.electricity.link",
     },
     {
-      label: "Logbook",
-      icon: BookOpen,
-      action: () => navigate("logbook"),
-      active: isActive(["logbook"]),
-      ocid: "bottom_nav.logbook.link",
-    },
-    {
       label: "Spares",
       icon: Package,
       action: () => navigate("spares"),
       active: isActive(["spares"]),
       ocid: "bottom_nav.spares.link",
+    },
+    {
+      label: "Logbook",
+      icon: BookOpen,
+      action: () => navigate("logbook"),
+      active: isActive(["logbook"]),
+      ocid: "bottom_nav.logbook.link",
     },
     ...(user.role === "admin"
       ? [

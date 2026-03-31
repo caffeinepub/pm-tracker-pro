@@ -78,7 +78,13 @@ const CHART_COLORS = [
   "oklch(0.70 0.14 160)",
 ];
 
-const EMPTY_METER = { name: "", location: "", multiplier: 1, unit: "kWh" };
+const EMPTY_METER = {
+  name: "",
+  location: "",
+  multiplier: 1,
+  unit: "kWh",
+  includeInKpi: true,
+};
 const EMPTY_READING = {
   meterId: "",
   date: new Date().toISOString().split("T")[0],
@@ -182,6 +188,7 @@ export default function ElectricityPage() {
         id: `meter-${Date.now()}`,
         ...meterForm,
         multiplier: Number(meterForm.multiplier),
+        includeInKpi: meterForm.includeInKpi !== false,
         createdAt: Date.now(),
       };
       addElectricityMeter(meter);
@@ -563,6 +570,34 @@ export default function ElectricityPage() {
                             {m.unit}
                           </TableCell>
                           <TableCell>
+                            <div className="flex items-center gap-1">
+                              <input
+                                type="checkbox"
+                                checked={m.includeInKpi !== false}
+                                onChange={() =>
+                                  updateElectricityMeter(m.id, {
+                                    includeInKpi: m.includeInKpi === false,
+                                  })
+                                }
+                                title="Include in KPI Report"
+                                style={{
+                                  accentColor: "oklch(0.72 0.14 160)",
+                                  cursor: "pointer",
+                                  width: "15px",
+                                  height: "15px",
+                                }}
+                              />
+                              <span
+                                style={{
+                                  fontSize: "10px",
+                                  color: "oklch(0.68 0.010 260)",
+                                }}
+                              >
+                                KPI
+                              </span>
+                            </div>
+                          </TableCell>
+                          <TableCell>
                             <div className="flex gap-2">
                               <Button
                                 size="sm"
@@ -573,6 +608,7 @@ export default function ElectricityPage() {
                                     location: m.location,
                                     multiplier: m.multiplier,
                                     unit: m.unit,
+                                    includeInKpi: m.includeInKpi !== false,
                                   });
                                   setEditMeterId(m.id);
                                   setShowMeterForm(true);
@@ -1140,6 +1176,35 @@ export default function ElectricityPage() {
                     </SelectContent>
                   </Select>
                 </div>
+              </div>
+              <div className="flex items-center gap-2 mb-2">
+                <input
+                  type="checkbox"
+                  id="includeInKpi"
+                  checked={meterForm.includeInKpi !== false}
+                  onChange={(e) =>
+                    setMeterForm((f) => ({
+                      ...f,
+                      includeInKpi: e.target.checked,
+                    }))
+                  }
+                  style={{
+                    accentColor: "oklch(0.72 0.14 160)",
+                    cursor: "pointer",
+                    width: "16px",
+                    height: "16px",
+                  }}
+                />
+                <label
+                  htmlFor="includeInKpi"
+                  style={{
+                    color: "oklch(0.75 0.010 260)",
+                    fontSize: "13px",
+                    cursor: "pointer",
+                  }}
+                >
+                  Include in KPI Report
+                </label>
               </div>
               <div className="flex gap-3 justify-end">
                 <Button

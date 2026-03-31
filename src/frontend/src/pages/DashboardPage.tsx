@@ -218,6 +218,7 @@ export default function DashboardPage() {
     kaizenRecords,
     predictiveRecords,
     meterReadings,
+    electricityMeters,
     spareItems,
   } = useApp();
 
@@ -528,11 +529,45 @@ export default function DashboardPage() {
     ];
     const totalCost = allSpareUsage.reduce((s, r) => s + r.cost, 0);
 
-    // Electricity
+    // Electricity - meter summary for KPI
     const safeReadings = Array.isArray(meterReadings) ? meterReadings : [];
-    const monthReadings = safeReadings.filter((r) => isInMonth(r.date));
-    const totalConsumption = monthReadings.reduce(
-      (s, r) => s + (r.consumption || 0),
+    const safeMeters = Array.isArray(electricityMeters)
+      ? electricityMeters
+      : [];
+    const kpiMeters = safeMeters.filter((m) => m.includeInKpi !== false);
+    const electricitySummary = kpiMeters.map((meter) => {
+      const mReadings = safeReadings
+        .filter((r) => r.meterId === meter.id && isInMonth(r.date))
+        .sort((a, b) => a.date.localeCompare(b.date));
+      if (mReadings.length === 0)
+        return {
+          name: meter.name,
+          unit: meter.unit,
+          firstDate: "-",
+          firstReading: 0,
+          lastDate: "-",
+          lastReading: 0,
+          consumption: 0,
+          hasData: false,
+        };
+      const first = mReadings[0];
+      const last = mReadings[mReadings.length - 1];
+      const firstReading = first.endReading ?? first.startReading ?? 0;
+      const lastReading = last.endReading ?? last.startReading ?? 0;
+      const consumption = lastReading - firstReading;
+      return {
+        name: meter.name,
+        unit: meter.unit,
+        firstDate: first.date,
+        firstReading,
+        lastDate: last.date,
+        lastReading,
+        consumption,
+        hasData: true,
+      };
+    });
+    const totalElectricityConsumption = electricitySummary.reduce(
+      (s, m) => s + (m.hasData ? m.consumption : 0),
       0,
     );
 
@@ -567,51 +602,52 @@ export default function DashboardPage() {
 <style>
 @page { size: A4; margin: 12mm 10mm; }
 * { box-sizing: border-box; margin: 0; padding: 0; }
-body { font-family: Arial, sans-serif; font-size: 10px; color: #111; background: #fff; }
-h1 { font-size: 16px; font-weight: 700; text-align: center; text-transform: uppercase; letter-spacing: 1px; }
-h2 { font-size: 12px; font-weight: 700; margin: 12px 0 5px; border-bottom: 2px solid #111; padding-bottom: 2px; text-transform: uppercase; letter-spacing: 0.5px; }
-h3 { font-size: 10px; text-align: center; color: #555; margin-bottom: 3px; }
-.header-box { border: 2px solid #111; padding: 10px; margin-bottom: 12px; }
-.kpi-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; margin-bottom: 10px; }
-.kpi-card { border: 1px solid #ccc; padding: 6px 8px; border-radius: 4px; }
-.kpi-label { font-size: 8.5px; color: #777; text-transform: uppercase; letter-spacing: 0.4px; }
-.kpi-value { font-size: 16px; font-weight: 700; margin-top: 1px; }
-table { width: 100%; border-collapse: collapse; margin-bottom: 10px; font-size: 9.5px; }
-th { background: #1a1a1a; color: #fff; padding: 5px 6px; text-align: left; font-size: 9px; text-transform: uppercase; letter-spacing: 0.4px; }
-td { padding: 4px 6px; border-bottom: 1px solid #eee; vertical-align: middle; }
-tr:nth-child(even) td { background: #f9f9f9; }
-.footer { margin-top: 16px; border-top: 1px solid #ccc; padding-top: 8px; text-align: center; font-size: 9px; color: #888; }
-.section-title { font-size: 11px; font-weight: 600; color: #333; }
+body { font-family: Arial, sans-serif; font-size: 10px; color: #1a1a2e; background: #fff; }
+h2 { font-size: 11px; font-weight: 700; margin: 14px 0 0; text-transform: uppercase; letter-spacing: 0.6px; }
+.section-header { background: #1a3a5c; color: white; padding: 7px 12px; border-radius: 4px 4px 0 0; margin-bottom: 0; font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.6px; }
+.section-body { border: 1px solid #c8d8e8; border-top: none; border-radius: 0 0 4px 4px; padding: 10px; margin-bottom: 14px; background: #fafcff; }
+.kpi-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; }
+.kpi-card { border: 1px solid #c8d8e8; padding: 8px 10px; border-radius: 6px; background: #f0f6ff; border-left: 3px solid #2d6a9f; }
+.kpi-label { font-size: 8.5px; color: #555; text-transform: uppercase; letter-spacing: 0.5px; font-weight: 600; }
+.kpi-value { font-size: 20px; font-weight: 700; margin-top: 2px; color: #1a3a5c; }
+.kpi-card.green { border-left-color: #27ae60; background: #f0fff6; }
+.kpi-card.green .kpi-value { color: #1e8449; }
+.kpi-card.orange { border-left-color: #e67e22; background: #fff8f0; }
+.kpi-card.orange .kpi-value { color: #c0392b; }
+table { width: 100%; border-collapse: collapse; margin-top: 6px; font-size: 9.5px; }
+th { background: #1a3a5c; color: #fff; padding: 6px 8px; text-align: left; font-size: 9px; text-transform: uppercase; letter-spacing: 0.4px; }
+td { padding: 5px 8px; border-bottom: 1px solid #e0e9f4; vertical-align: middle; }
+tr:nth-child(even) td { background: #f4f8fd; }
+.badge-ok { background: #d4edda; color: #155724; padding: 2px 6px; border-radius: 10px; font-size: 8px; font-weight: 700; }
+.badge-low { background: #f8d7da; color: #721c24; padding: 2px 6px; border-radius: 10px; font-size: 8px; font-weight: 700; }
+.footer { margin-top: 16px; border-top: 2px solid #1a3a5c; padding-top: 10px; text-align: center; font-size: 9px; color: #666; }
 @media print { body { -webkit-print-color-adjust: exact; print-color-adjust: exact; } }
 </style>
 </head>
 <body>
-<div class="header-box">
-  <h3>Plant Maintenance Management System</h3>
-  <h1>Monthly KPI Report — ${monthLabel} ${year}</h1>
-  <p style="text-align:center;font-size:9px;color:#666;margin-top:4px;">Generated on: ${new Date().toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" })}</p>
+
+<div style="background:linear-gradient(135deg,#1a3a5c,#2d6a9f);color:white;padding:16px;border-radius:6px;margin-bottom:16px;text-align:center;">
+  <div style="font-size:11px;letter-spacing:2px;opacity:0.85;margin-bottom:4px;">PLANT MAINTENANCE MANAGEMENT SYSTEM</div>
+  <div style="font-size:20px;font-weight:700;letter-spacing:1px;">MONTHLY KPI REPORT</div>
+  <div style="font-size:13px;margin-top:5px;opacity:0.9;font-weight:600;">${monthLabel} ${year}</div>
+  <div style="font-size:9px;margin-top:6px;opacity:0.7;">Generated: ${new Date().toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" })}</div>
 </div>
 
-<h2>1. PM Summary</h2>
-<div class="kpi-grid">
-  <div class="kpi-card"><div class="kpi-label">Planned PM</div><div class="kpi-value">${plannedPM}</div></div>
-  <div class="kpi-card"><div class="kpi-label">Completed PM</div><div class="kpi-value">${completedPM}</div></div>
-  <div class="kpi-card"><div class="kpi-label">Completion %</div><div class="kpi-value">${pmPct}%</div></div>
-  <div class="kpi-card"><div class="kpi-label">Pending Approvals</div><div class="kpi-value">${pendingPMApprovals}</div></div>
-</div>
-
-<h2>2. Breakdown Summary</h2>
+<div class="section-header">1. Breakdown Summary</div>
+<div class="section-body">
 <div class="kpi-grid">
   <div class="kpi-card"><div class="kpi-label">BD Count</div><div class="kpi-value">${totalBdCount}</div></div>
   <div class="kpi-card"><div class="kpi-label">BD Hours</div><div class="kpi-value">${totalBdHours.toFixed(1)}h</div></div>
-  <div class="kpi-card"><div class="kpi-label">BD%</div><div class="kpi-value">${bdPct}%</div></div>
-  <div class="kpi-card"><div class="kpi-label">Uptime%</div><div class="kpi-value">${uptime}%</div></div>
+  <div class="kpi-card orange"><div class="kpi-label">BD%</div><div class="kpi-value">${bdPct}%</div></div>
+  <div class="kpi-card green"><div class="kpi-label">Uptime%</div><div class="kpi-value">${uptime}%</div></div>
   <div class="kpi-card"><div class="kpi-label">MTTR (hrs)</div><div class="kpi-value">${mttr}</div></div>
   <div class="kpi-card"><div class="kpi-label">MTBF (hrs)</div><div class="kpi-value">${mtbf}</div></div>
   <div class="kpi-card"><div class="kpi-label">Avail. Hrs</div><div class="kpi-value">${maxAvailHrs.toFixed(0)}</div></div>
 </div>
+</div>
 
-<h2>3. Section KPIs</h2>
+<div class="section-header">2. Analysis — Section KPIs</div>
+<div class="section-body">
 <table>
   <thead><tr><th>Section</th><th>BD Count</th><th>BD%</th><th>MTTR (h)</th><th>MTBF (h)</th><th>Target BD%</th><th>Target Uptime%</th></tr></thead>
   <tbody>
@@ -630,35 +666,79 @@ tr:nth-child(even) td { background: #f9f9f9; }
       .join("")}
   </tbody>
 </table>
-
-<h2>4. Predictive Maintenance Summary</h2>
-<div class="kpi-grid" style="grid-template-columns:repeat(3,1fr)">
-  <div class="kpi-card"><div class="kpi-label">Completed</div><div class="kpi-value">${monthPredComplete}</div></div>
-  <div class="kpi-card"><div class="kpi-label">Pending Approval</div><div class="kpi-value">${monthPredPending}</div></div>
 </div>
 
-<h2>5. Task / Planner Summary</h2>
+<div class="section-header">3. Preventive Maintenance Summary</div>
+<div class="section-body">
+<div class="kpi-grid">
+  <div class="kpi-card green"><div class="kpi-label">Planned PM</div><div class="kpi-value">${plannedPM}</div></div>
+  <div class="kpi-card green"><div class="kpi-label">Completed PM</div><div class="kpi-value">${completedPM}</div></div>
+  <div class="kpi-card"><div class="kpi-label">Completion %</div><div class="kpi-value">${pmPct}%</div></div>
+  <div class="kpi-card orange"><div class="kpi-label">Pending Approvals</div><div class="kpi-value">${pendingPMApprovals}</div></div>
+</div>
+</div>
+
+<div class="section-header">4. Predictive Maintenance Summary</div>
+<div class="section-body">
+<div class="kpi-grid" style="grid-template-columns:repeat(4,1fr)">
+  <div class="kpi-card green"><div class="kpi-label">Completed</div><div class="kpi-value">${monthPredComplete}</div></div>
+  <div class="kpi-card orange"><div class="kpi-label">Pending Approval</div><div class="kpi-value">${monthPredPending}</div></div>
+</div>
+</div>
+
+<div class="section-header">5. Tasks / Planner Summary</div>
+<div class="section-body">
 <div class="kpi-grid">
   <div class="kpi-card"><div class="kpi-label">Total Tasks</div><div class="kpi-value">${totalTasks}</div></div>
-  <div class="kpi-card"><div class="kpi-label">Completed</div><div class="kpi-value">${completedTasks}</div></div>
-  <div class="kpi-card"><div class="kpi-label">Pending</div><div class="kpi-value">${pendingTasks}</div></div>
+  <div class="kpi-card green"><div class="kpi-label">Completed</div><div class="kpi-value">${completedTasks}</div></div>
+  <div class="kpi-card orange"><div class="kpi-label">Pending</div><div class="kpi-value">${pendingTasks}</div></div>
   <div class="kpi-card"><div class="kpi-label">High Priority</div><div class="kpi-value">${highPriTasks}</div></div>
 </div>
-
-<h2>6. Unplanned Maintenance %</h2>
-<p style="font-size:11px;margin-bottom:8px;">
-  Formula: Breakdown Count (${totalBdCount}) ÷ Total Planned (PM + Predictive = ${totalPlanned}) × 100
-  = <strong>${unplannedPct}%</strong>
-</p>
-
-<h2>7. Kaizen Summary</h2>
-<div class="kpi-grid" style="grid-template-columns:repeat(3,1fr)">
-  <div class="kpi-card"><div class="kpi-label">Submitted</div><div class="kpi-value">${kaizenSubmitted}</div></div>
-  <div class="kpi-card"><div class="kpi-label">Approved</div><div class="kpi-value">${kaizenApproved}</div></div>
-  <div class="kpi-card"><div class="kpi-label">Pending</div><div class="kpi-value">${kaizenPending}</div></div>
 </div>
 
-<h2>8. Stock of Spares</h2>
+<div class="section-header">6. Kaizen Summary</div>
+<div class="section-body">
+<div class="kpi-grid" style="grid-template-columns:repeat(4,1fr)">
+  <div class="kpi-card"><div class="kpi-label">Submitted</div><div class="kpi-value">${kaizenSubmitted}</div></div>
+  <div class="kpi-card green"><div class="kpi-label">Approved</div><div class="kpi-value">${kaizenApproved}</div></div>
+  <div class="kpi-card orange"><div class="kpi-label">Pending</div><div class="kpi-value">${kaizenPending}</div></div>
+</div>
+<p style="margin-top:8px;font-size:10px;color:#2d6a9f;font-weight:600;background:#f0f6ff;padding:6px 10px;border-radius:4px;border-left:3px solid #2d6a9f;">
+  Unplanned Maintenance: ${unplannedPct}% &nbsp;|&nbsp; Formula: BD Count (${totalBdCount}) ÷ Total Planned (${totalPlanned}) × 100
+</p>
+</div>
+
+<div class="section-header">7. Electricity Consumption (${monthLabel} ${year})</div>
+<div class="section-body">
+${
+  electricitySummary.length === 0
+    ? '<p style="color:#888;font-style:italic;">No meters configured or selected for KPI.</p>'
+    : `<table>
+  <thead><tr><th>Meter Name</th><th>1st Reading Date</th><th>1st Reading</th><th>Last Reading Date</th><th>Last Reading</th><th>Monthly Consumption</th></tr></thead>
+  <tbody>
+    ${electricitySummary
+      .map(
+        (m) => `<tr>
+      <td>${m.name}</td>
+      <td>${m.firstDate}</td>
+      <td>${m.hasData ? m.firstReading : "-"}</td>
+      <td>${m.lastDate}</td>
+      <td>${m.hasData ? m.lastReading : "-"}</td>
+      <td>${m.hasData ? `${m.consumption.toFixed(2)} ${m.unit}` : "-"}</td>
+    </tr>`,
+      )
+      .join("")}
+    <tr style="font-weight:700;background:#e8f0fb">
+      <td colspan="5" style="text-align:right;color:#1a3a5c;">Total Consumption:</td>
+      <td style="color:#1a3a5c;">${totalElectricityConsumption.toFixed(2)}</td>
+    </tr>
+  </tbody>
+</table>`
+}
+</div>
+
+<div class="section-header">8. Spares / Stock Summary</div>
+<div class="section-body">
 ${
   safeSpares.length === 0
     ? '<p style="color:#888;font-style:italic;">No spares in master list.</p>'
@@ -675,15 +755,17 @@ ${
       <td>${s.minStockLevel}</td>
       <td>${s.unit}</td>
       <td>₹${s.costPerUnit}</td>
-      <td style="font-weight:700;color:${s.qtyInStock <= s.minStockLevel ? "#c0392b" : "#27ae60"}">${s.qtyInStock <= s.minStockLevel ? "LOW STOCK" : "OK"}</td>
+      <td><span class="${s.qtyInStock <= s.minStockLevel ? "badge-low" : "badge-ok"}">${s.qtyInStock <= s.minStockLevel ? "LOW STOCK" : "OK"}</span></td>
     </tr>`,
       )
       .join("")}
   </tbody>
 </table>`
 }
+</div>
 
-<h2>9. Maintenance Cost (${monthLabel} ${year})</h2>
+<div class="section-header">9. Maintenance Cost (${monthLabel} ${year})</div>
+<div class="section-body">
 ${
   allSpareUsage.length === 0
     ? '<p style="color:#888;font-style:italic;">No spare usage recorded for this month.</p>'
@@ -698,34 +780,16 @@ ${
     </tr>`,
       )
       .join("")}
-    <tr style="font-weight:700;background:#f0f0f0"><td colspan="5" style="text-align:right;">Total Cost:</td><td>₹${totalCost.toLocaleString()}</td></tr>
+    <tr style="font-weight:700;background:#e8f0fb"><td colspan="5" style="text-align:right;color:#1a3a5c;">Total Cost:</td><td style="color:#1a3a5c;">₹${totalCost.toLocaleString()}</td></tr>
   </tbody>
 </table>`
 }
-
-<h2>10. Electricity Consumption (${monthLabel} ${year})</h2>
-${
-  monthReadings.length === 0
-    ? '<p style="color:#888;font-style:italic;">No electricity readings for this month.</p>'
-    : `
-<table>
-  <thead><tr><th>Date</th><th>Meter</th><th>Reading</th><th>Consumption</th><th>Entered By</th></tr></thead>
-  <tbody>
-    ${monthReadings
-      .map(
-        (r) => `<tr>
-      <td>${r.date}</td><td>${r.meterName}</td><td>${r.endReading ?? r.startReading}</td><td>${(r.consumption || 0).toFixed(2)} ${""}</td><td>${r.enteredBy}</td>
-    </tr>`,
-      )
-      .join("")}
-    <tr style="font-weight:700;background:#f0f0f0"><td colspan="3" style="text-align:right;">Total Consumption:</td><td>${totalConsumption.toFixed(2)}</td><td></td></tr>
-  </tbody>
-</table>`
-}
+</div>
 
 <div class="footer">
-  <p>Plant Maintenance Management System — Monthly KPI Report — ${monthLabel} ${year}</p>
-  <p>Generated: ${new Date().toLocaleString("en-IN")}</p>
+  <div style="font-weight:700;color:#1a3a5c;font-size:10px;margin-bottom:3px;">Plant Maintenance Management System</div>
+  <div>Monthly KPI Report — ${monthLabel} ${year}</div>
+  <div style="margin-top:3px;">Generated: ${new Date().toLocaleString("en-IN")}</div>
 </div>
 </body></html>`;
 
@@ -821,8 +885,15 @@ ${
               ).filter((t) =>
                 t.statusHistory?.some((h) => h.requiresApproval && !h.approved),
               ).length;
+              const pendingPredictive = (
+                Array.isArray(predictiveRecords) ? predictiveRecords : []
+              ).filter((r) => r.status === "pending-approval").length;
               const total =
-                pendingPM + pendingBD + pendingKaizen + pendingTaskStatus;
+                pendingPM +
+                pendingBD +
+                pendingKaizen +
+                pendingTaskStatus +
+                pendingPredictive;
               if (total === 0)
                 return (
                   <motion.div
@@ -879,7 +950,7 @@ ${
                       </Badge>
                     </div>
                   </div>
-                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                  <div className="grid grid-cols-2 sm:grid-cols-5 gap-2">
                     {[
                       {
                         label: "PM Checklists",
@@ -904,6 +975,12 @@ ${
                         count: pendingTaskStatus,
                         page: "task-list" as const,
                         color: "oklch(0.82 0.14 55)",
+                      },
+                      {
+                        label: "Predictive",
+                        count: pendingPredictive,
+                        page: "predictive" as const,
+                        color: "oklch(0.72 0.15 175)",
                       },
                     ].map((item) => (
                       <div

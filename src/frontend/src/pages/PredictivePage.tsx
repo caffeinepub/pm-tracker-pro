@@ -100,6 +100,21 @@ export default function PredictivePage() {
     [predictivePlans, selectedPlanId],
   );
 
+  // Check if already submitted in current period (same month+year)
+  const isAlreadySubmittedForPeriod = useMemo(() => {
+    if (!selectedPlan) return false;
+    const now = new Date();
+    const currentMonth = now.getMonth();
+    const currentYear = now.getFullYear();
+    return predictiveRecords.some((r) => {
+      if (r.planId !== selectedPlan.id) return false;
+      const sub = new Date(r.submittedAt);
+      return (
+        sub.getMonth() === currentMonth && sub.getFullYear() === currentYear
+      );
+    });
+  }, [selectedPlan, predictiveRecords]);
+
   function handleSavePlan(e: React.FormEvent) {
     e.preventDefault();
     if (!planForm.machineId) {
@@ -724,15 +739,27 @@ export default function PredictivePage() {
                         >
                           -- Select Plan --
                         </SelectItem>
-                        {predictivePlans.map((p) => (
-                          <SelectItem
-                            key={p.id}
-                            value={p.id}
-                            style={{ color: "oklch(0.88 0.010 260)" }}
-                          >
-                            {p.machineName} — {p.scheduledDate}
-                          </SelectItem>
-                        ))}
+                        {predictivePlans.map((p) => {
+                          const nowInner = new Date();
+                          const alreadyDone = predictiveRecords.some((r) => {
+                            if (r.planId !== p.id) return false;
+                            const sub = new Date(r.submittedAt);
+                            return (
+                              sub.getMonth() === nowInner.getMonth() &&
+                              sub.getFullYear() === nowInner.getFullYear()
+                            );
+                          });
+                          return (
+                            <SelectItem
+                              key={p.id}
+                              value={p.id}
+                              style={{ color: "oklch(0.88 0.010 260)" }}
+                            >
+                              {p.machineName} — {p.scheduledDate}
+                              {alreadyDone ? " ✓ Submitted" : ""}
+                            </SelectItem>
+                          );
+                        })}
                       </SelectContent>
                     </Select>
                   </div>
@@ -961,13 +988,46 @@ export default function PredictivePage() {
                       </div>
                     ))}
                   </div>
+                  {isAlreadySubmittedForPeriod && user?.role !== "admin" && (
+                    <div
+                      className="flex items-center gap-2 p-3 rounded"
+                      style={{
+                        background: "oklch(0.30 0.090 145 / 0.15)",
+                        border: "1px solid oklch(0.52 0.12 145 / 0.3)",
+                        color: "oklch(0.75 0.130 145)",
+                        fontSize: "13px",
+                      }}
+                    >
+                      <CheckCircle2 className="w-4 h-4 shrink-0" />
+                      <span>
+                        This schedule has already been submitted. Please wait
+                        for the next schedule or admin rescheduling.
+                      </span>
+                    </div>
+                  )}
                   <Button
                     type="submit"
                     data-ocid="predictive.submit_button"
+                    disabled={
+                      isAlreadySubmittedForPeriod && user?.role !== "admin"
+                    }
                     style={{
-                      background: "oklch(0.50 0.065 232 / 0.20)",
-                      color: "oklch(0.65 0.150 232)",
-                      border: "1px solid oklch(0.50 0.065 232 / 0.4)",
+                      background:
+                        isAlreadySubmittedForPeriod && user?.role !== "admin"
+                          ? "oklch(0.30 0.010 260 / 0.20)"
+                          : "oklch(0.50 0.065 232 / 0.20)",
+                      color:
+                        isAlreadySubmittedForPeriod && user?.role !== "admin"
+                          ? "oklch(0.45 0.010 260)"
+                          : "oklch(0.65 0.150 232)",
+                      border:
+                        isAlreadySubmittedForPeriod && user?.role !== "admin"
+                          ? "1px solid oklch(0.35 0.010 260 / 0.3)"
+                          : "1px solid oklch(0.50 0.065 232 / 0.4)",
+                      cursor:
+                        isAlreadySubmittedForPeriod && user?.role !== "admin"
+                          ? "not-allowed"
+                          : undefined,
                     }}
                   >
                     Submit Reading
@@ -1081,29 +1141,56 @@ export default function PredictivePage() {
                                 </Badge>
                               </TableCell>
                               <TableCell>
-                                {user?.role === "admin" &&
-                                  r.status === "pending-approval" && (
+                                {user?.role === "admin" && (
+                                  <div className="flex gap-1 flex-wrap">
+                                    {r.status === "pending-approval" && (
+                                      <Button
+                                        size="sm"
+                                        onClick={() =>
+                                          approvePredictiveRecord(r.id)
+                                        }
+                                        data-ocid={`predictive.confirm_button.${idx + 1}`}
+                                        style={{
+                                          fontSize: "11px",
+                                          background:
+                                            "oklch(0.30 0.090 145 / 0.2)",
+                                          color: "oklch(0.75 0.130 145)",
+                                          border:
+                                            "1px solid oklch(0.52 0.12 145 / 0.4)",
+                                          height: "26px",
+                                          padding: "0 8px",
+                                        }}
+                                      >
+                                        <CheckCircle2 className="w-3 h-3 mr-1" />{" "}
+                                        Approve
+                                      </Button>
+                                    )}
                                     <Button
                                       size="sm"
-                                      onClick={() =>
-                                        approvePredictiveRecord(r.id)
-                                      }
-                                      data-ocid={`predictive.confirm_button.${idx + 1}`}
+                                      onClick={() => {
+                                        setSelectedPlanId(r.planId);
+                                        setReadingForm({
+                                          date: r.date,
+                                          readings: { ...r.readings },
+                                          remarks: r.remarks,
+                                        });
+                                      }}
+                                      data-ocid={`predictive.edit_button.${idx + 1}`}
                                       style={{
                                         fontSize: "11px",
                                         background:
-                                          "oklch(0.30 0.090 145 / 0.2)",
-                                        color: "oklch(0.75 0.130 145)",
+                                          "oklch(0.35 0.090 55 / 0.15)",
+                                        color: "oklch(0.80 0.180 55)",
                                         border:
-                                          "1px solid oklch(0.52 0.12 145 / 0.4)",
+                                          "1px solid oklch(0.55 0.12 55 / 0.3)",
                                         height: "26px",
                                         padding: "0 8px",
                                       }}
                                     >
-                                      <CheckCircle2 className="w-3 h-3 mr-1" />{" "}
-                                      Approve
+                                      Edit
                                     </Button>
-                                  )}
+                                  </div>
+                                )}
                               </TableCell>
                             </TableRow>
                           ))}
