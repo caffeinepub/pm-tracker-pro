@@ -786,6 +786,32 @@ export function AppProvider({ children }: { children: ReactNode }) {
     return [];
   });
 
+  // One-time demo data seeding: fill any module that has zero records
+  // biome-ignore lint/correctness/useExhaustiveDependencies: intentional one-time seed
+  useEffect(() => {
+    const DEMO_SEED_KEY = "pmms_demo_v2_seeded";
+    if (localStorage.getItem(DEMO_SEED_KEY)) return;
+    if (breakdownRecords.length === 0)
+      setBreakdownRecords(DEMO_BREAKDOWN_RECORDS);
+    if (capaRecords.length === 0) setCapaRecords(DEMO_CAPA_RECORDS);
+    if (historyCards.length === 0) setHistoryCards(DEMO_HISTORY_CARDS);
+    if (taskRecords.length === 0) setTaskRecords(DEMO_TASK_RECORDS);
+    if (kaizenRecords.length === 0) setKaizenRecords(DEMO_KAIZEN_RECORDS);
+    if (predictivePlans.length === 0) setPredictivePlans(DEMO_PREDICTIVE_PLANS);
+    if (predictiveRecords.length === 0)
+      setPredictiveRecords(DEMO_PREDICTIVE_RECORDS);
+    if (electricityMeters.length === 0)
+      setElectricityMeters(DEMO_ELECTRICITY_METERS);
+    if (meterReadings.length === 0) setMeterReadings(DEMO_METER_READINGS);
+    if (logbookCheckItems.length === 0)
+      setLogbookCheckItems(DEMO_LOGBOOK_CHECK_ITEMS);
+    if (logbookEntries.length === 0) setLogbookEntries(DEMO_LOGBOOK_ENTRIES);
+    if (spareItems.length === 0) setSpareItems(DEMO_SPARE_ITEMS);
+    if (machines.length === 0) setMachines(DEMO_MACHINES as MachineExtended[]);
+    localStorage.setItem(DEMO_SEED_KEY, "1");
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   useEffect(() => {
     localStorage.setItem(SPARES_KEY, JSON.stringify(spareItems));
   }, [spareItems]);
