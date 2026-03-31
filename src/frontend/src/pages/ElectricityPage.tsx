@@ -24,15 +24,17 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import {
+  FileDown,
   FileSpreadsheet,
   LogOut,
   Plus,
   Settings,
   Trash2,
+  Upload,
   Zap,
 } from "lucide-react";
 import { motion } from "motion/react";
-import { useMemo, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import {
   Bar,
   BarChart,
@@ -80,8 +82,8 @@ const EMPTY_METER = { name: "", location: "", multiplier: 1, unit: "kWh" };
 const EMPTY_READING = {
   meterId: "",
   date: new Date().toISOString().split("T")[0],
-  startReading: "",
-  endReading: "",
+  time: new Date().toTimeString().slice(0, 5),
+  todayReading: "",
 };
 
 export default function ElectricityPage() {
@@ -103,17 +105,40 @@ export default function ElectricityPage() {
   const [editMeterId, setEditMeterId] = useState<string | null>(null);
 
   const [readingForm, setReadingForm] = useState({ ...EMPTY_READING });
+  const importRef = useRef<HTMLInputElement>(null);
 
   const selectedMeter = useMemo(
     () => electricityMeters.find((m) => m.id === readingForm.meterId),
     [electricityMeters, readingForm.meterId],
   );
+
+  // Get yesterday's date string
+  const yesterdayDate = useMemo(() => {
+    if (!readingForm.date) return "";
+    const d = new Date(readingForm.date);
+    d.setDate(d.getDate() - 1);
+    return d.toISOString().split("T")[0];
+  }, [readingForm.date]);
+
+  // Look up yesterday's reading for the selected meter
+  const yesterdayReading = useMemo(() => {
+    if (!readingForm.meterId || !yesterdayDate) return null;
+    const found = meterReadings
+      .filter(
+        (r) => r.meterId === readingForm.meterId && r.date === yesterdayDate,
+      )
+      .sort((a, b) => b.submittedAt - a.submittedAt);
+    return found.length > 0 ? (found[0].reading ?? found[0].endReading) : null;
+  }, [meterReadings, readingForm.meterId, yesterdayDate]);
+
   const consumption = useMemo(() => {
-    const start = Number(readingForm.startReading);
-    const end = Number(readingForm.endReading);
-    if (!start || !end || end < start) return 0;
-    return (end - start) * (selectedMeter?.multiplier ?? 1);
-  }, [readingForm.startReading, readingForm.endReading, selectedMeter]);
+    const today = Number(readingForm.todayReading);
+    if (!today) return 0;
+    if (yesterdayReading === null) return 0;
+    const diff = today - yesterdayReading;
+    if (diff < 0) return 0;
+    return diff * (selectedMeter?.multiplier ?? 1);
+  }, [readingForm.todayReading, yesterdayReading, selectedMeter]);
 
   const sortedReadings = useMemo(
     () => [...meterReadings].sort((a, b) => b.date.localeCompare(a.date)),
@@ -173,23 +198,21 @@ export default function ElectricityPage() {
       toast.error("Select a meter");
       return;
     }
-    const start = Number(readingForm.startReading);
-    const end = Number(readingForm.endReading);
-    if (!start || !end) {
-      toast.error("Enter valid readings");
+    const today = Number(readingForm.todayReading);
+    if (!today && today !== 0) {
+      toast.error("Enter today's meter reading");
       return;
     }
-    if (end < start) {
-      toast.error("End reading must be ≥ start reading");
-      return;
-    }
+    const prevReading = yesterdayReading ?? 0;
     const reading: MeterReading = {
       id: `reading-${Date.now()}`,
       meterId: readingForm.meterId,
       meterName: selectedMeter?.name ?? readingForm.meterId,
       date: readingForm.date,
-      startReading: start,
-      endReading: end,
+      time: readingForm.time,
+      reading: today,
+      startReading: prevReading,
+      endReading: today,
       consumption,
       enteredBy: user?.name ?? "",
       enteredByUsername: user?.username ?? "",
@@ -207,9 +230,10 @@ export default function ElectricityPage() {
     }
     const data = sortedReadings.map((r) => ({
       Date: r.date,
+      Time: r.time ?? "",
       Meter: r.meterName,
-      "Start Reading": r.startReading,
-      "End Reading": r.endReading,
+      "Yesterday Reading (Start)": r.startReading,
+      "Today Reading (End)": r.endReading,
       Consumption: r.consumption,
       Unit: electricityMeters.find((m) => m.id === r.meterId)?.unit ?? "",
       "Entered By": r.enteredBy,
@@ -224,6 +248,86 @@ export default function ElectricityPage() {
       wb,
       `Electricity_Readings_${new Date().toISOString().split("T")[0]}.xlsx`,
     );
+  }
+
+  function handleDownloadTemplate() {
+    if (!XLSX) {
+      toast.error("XLSX not available");
+      return;
+    }
+    const sampleDate = new Date().toISOString().split("T")[0];
+    const data = [
+      {
+        Date: sampleDate,
+        Time: "08:00",
+        MeterName: electricityMeters[0]?.name ?? "Main Meter",
+        Reading: 12345,
+      },
+    ];
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(
+      wb,
+      XLSX.utils.json_to_sheet(data),
+      "Import Template",
+    );
+    XLSX.writeFile(wb, "Electricity_Import_Template.xlsx");
+  }
+
+  function handleImport(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    if (!file || !XLSX) return;
+    const reader = new FileReader();
+    reader.onload = (ev) => {
+      try {
+        const wb = XLSX.read(ev.target?.result, { type: "binary" });
+        const ws = wb.Sheets[wb.SheetNames[0]];
+        const rows: any[] = XLSX.utils.sheet_to_json(ws);
+        let count = 0;
+        for (const row of rows) {
+          const meterName = row.MeterName ?? row.Meter ?? "";
+          const meter = electricityMeters.find(
+            (m) => m.name.toLowerCase() === String(meterName).toLowerCase(),
+          );
+          if (!meter) continue;
+          const date = String(row.Date ?? "").trim();
+          const time = String(row.Time ?? "08:00").trim();
+          const todayVal = Number(row.Reading);
+          if (!date || Number.isNaN(todayVal)) continue;
+          // find prior day reading
+          const priorDate = new Date(date);
+          priorDate.setDate(priorDate.getDate() - 1);
+          const priorDateStr = priorDate.toISOString().split("T")[0];
+          const prior = meterReadings
+            .filter((r) => r.meterId === meter.id && r.date === priorDateStr)
+            .sort((a, b) => b.submittedAt - a.submittedAt);
+          const prevReading =
+            prior.length > 0 ? (prior[0].reading ?? prior[0].endReading) : 0;
+          const diff = todayVal - prevReading;
+          const cons = diff > 0 ? diff * meter.multiplier : 0;
+          const reading: MeterReading = {
+            id: `reading-import-${Date.now()}-${count}`,
+            meterId: meter.id,
+            meterName: meter.name,
+            date,
+            time,
+            reading: todayVal,
+            startReading: prevReading,
+            endReading: todayVal,
+            consumption: cons,
+            enteredBy: user?.name ?? "",
+            enteredByUsername: user?.username ?? "",
+            submittedAt: Date.now(),
+          };
+          addMeterReading(reading);
+          count++;
+        }
+        toast.success(`${count} readings imported`);
+      } catch {
+        toast.error("Failed to parse Excel file");
+      }
+    };
+    reader.readAsBinaryString(file);
+    e.target.value = "";
   }
 
   const inputStyle = {
@@ -241,6 +345,13 @@ export default function ElectricityPage() {
   return (
     <>
       <MorningPopup />
+      <input
+        ref={importRef}
+        type="file"
+        accept=".xlsx,.xls"
+        style={{ display: "none" }}
+        onChange={handleImport}
+      />
       <div
         className="min-h-screen flex flex-col"
         style={{ background: "oklch(0.165 0.022 252)" }}
@@ -292,6 +403,32 @@ export default function ElectricityPage() {
             </div>
             <div className="flex items-center gap-2">
               <NotificationBell />
+              <Button
+                size="sm"
+                onClick={handleDownloadTemplate}
+                data-ocid="electricity.secondary_button"
+                style={{
+                  background: "oklch(0.30 0.050 252 / 0.25)",
+                  color: "oklch(0.68 0.010 260)",
+                  border: "1px solid oklch(0.40 0.030 252 / 0.5)",
+                  fontSize: "12px",
+                }}
+              >
+                <FileDown className="w-3.5 h-3.5 mr-1" /> Template
+              </Button>
+              <Button
+                size="sm"
+                onClick={() => importRef.current?.click()}
+                data-ocid="electricity.upload_button"
+                style={{
+                  background: "oklch(0.30 0.065 232 / 0.25)",
+                  color: "oklch(0.65 0.150 232)",
+                  border: "1px solid oklch(0.50 0.065 232 / 0.4)",
+                  fontSize: "12px",
+                }}
+              >
+                <Upload className="w-3.5 h-3.5 mr-1" /> Import
+              </Button>
               <Button
                 size="sm"
                 onClick={handleExport}
@@ -499,144 +636,179 @@ export default function ElectricityPage() {
                 Enter Meter Reading
               </h3>
             </div>
-            <form
-              onSubmit={handleAddReading}
-              className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4 items-end"
-            >
-              <div className="space-y-1.5">
-                <Label
-                  className="text-xs"
-                  style={{ color: "oklch(0.65 0.010 260)" }}
-                >
-                  Meter
-                </Label>
-                <Select
-                  value={readingForm.meterId || "none"}
-                  onValueChange={(v) =>
-                    setReadingForm((f) => ({
-                      ...f,
-                      meterId: v === "none" ? "" : v,
-                    }))
-                  }
-                >
-                  <SelectTrigger
-                    data-ocid="electricity.select"
-                    style={{ ...inputStyle, fontSize: "13px" }}
+            <form onSubmit={handleAddReading} className="space-y-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+                {/* Meter */}
+                <div className="space-y-1.5">
+                  <Label
+                    className="text-xs"
+                    style={{ color: "oklch(0.65 0.010 260)" }}
                   >
-                    <SelectValue placeholder="Select meter" />
-                  </SelectTrigger>
-                  <SelectContent
-                    style={{
-                      background: "oklch(0.22 0.022 252)",
-                      borderColor: "oklch(0.34 0.030 252)",
-                    }}
+                    Meter *
+                  </Label>
+                  <Select
+                    value={readingForm.meterId || "none"}
+                    onValueChange={(v) =>
+                      setReadingForm((f) => ({
+                        ...f,
+                        meterId: v === "none" ? "" : v,
+                      }))
+                    }
                   >
-                    <SelectItem
-                      value="none"
-                      style={{ color: "oklch(0.88 0.010 260)" }}
+                    <SelectTrigger
+                      data-ocid="electricity.select"
+                      style={{ ...inputStyle, fontSize: "13px" }}
                     >
-                      -- Select Meter --
-                    </SelectItem>
-                    {electricityMeters.map((m) => (
+                      <SelectValue placeholder="Select meter" />
+                    </SelectTrigger>
+                    <SelectContent
+                      style={{
+                        background: "oklch(0.22 0.022 252)",
+                        borderColor: "oklch(0.34 0.030 252)",
+                      }}
+                    >
                       <SelectItem
-                        key={m.id}
-                        value={m.id}
+                        value="none"
                         style={{ color: "oklch(0.88 0.010 260)" }}
                       >
-                        {m.name}
+                        -- Select Meter --
                       </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-              <div className="space-y-1.5">
-                <Label
-                  className="text-xs"
-                  style={{ color: "oklch(0.65 0.010 260)" }}
-                >
-                  Date
-                </Label>
-                <Input
-                  type="date"
-                  value={readingForm.date}
-                  onChange={(e) =>
-                    setReadingForm((f) => ({ ...f, date: e.target.value }))
-                  }
-                  data-ocid="electricity.input"
-                  style={{ ...inputStyle }}
-                />
-              </div>
-              <div className="space-y-1.5">
-                <Label
-                  className="text-xs"
-                  style={{ color: "oklch(0.65 0.010 260)" }}
-                >
-                  Start Reading
-                </Label>
-                <Input
-                  type="number"
-                  value={readingForm.startReading}
-                  onChange={(e) =>
-                    setReadingForm((f) => ({
-                      ...f,
-                      startReading: e.target.value,
-                    }))
-                  }
-                  placeholder="0"
-                  data-ocid="electricity.input"
-                  style={{ ...inputStyle }}
-                />
-              </div>
-              <div className="space-y-1.5">
-                <Label
-                  className="text-xs"
-                  style={{ color: "oklch(0.65 0.010 260)" }}
-                >
-                  End Reading
-                </Label>
-                <Input
-                  type="number"
-                  value={readingForm.endReading}
-                  onChange={(e) =>
-                    setReadingForm((f) => ({
-                      ...f,
-                      endReading: e.target.value,
-                    }))
-                  }
-                  placeholder="0"
-                  data-ocid="electricity.input"
-                  style={{ ...inputStyle }}
-                />
-              </div>
-              <div className="space-y-1.5">
-                <Label
-                  className="text-xs"
-                  style={{ color: "oklch(0.65 0.010 260)" }}
-                >
-                  Consumption (auto)
-                </Label>
-                <div
-                  className="h-10 flex items-center px-3 rounded-lg text-sm font-bold"
-                  style={{
-                    background: "oklch(0.17 0.018 255)",
-                    border: "1px solid oklch(0.28 0.025 252)",
-                    color: "oklch(0.80 0.180 55)",
-                  }}
-                >
-                  {consumption.toFixed(2)} {selectedMeter?.unit ?? ""}
+                      {electricityMeters.map((m) => (
+                        <SelectItem
+                          key={m.id}
+                          value={m.id}
+                          style={{ color: "oklch(0.88 0.010 260)" }}
+                        >
+                          {m.name}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                {/* Date */}
+                <div className="space-y-1.5">
+                  <Label
+                    className="text-xs"
+                    style={{ color: "oklch(0.65 0.010 260)" }}
+                  >
+                    Date
+                  </Label>
+                  <Input
+                    type="date"
+                    value={readingForm.date}
+                    onChange={(e) =>
+                      setReadingForm((f) => ({ ...f, date: e.target.value }))
+                    }
+                    data-ocid="electricity.input"
+                    style={{ ...inputStyle }}
+                  />
+                </div>
+
+                {/* Time */}
+                <div className="space-y-1.5">
+                  <Label
+                    className="text-xs"
+                    style={{ color: "oklch(0.65 0.010 260)" }}
+                  >
+                    Reading Time
+                  </Label>
+                  <Input
+                    type="time"
+                    value={readingForm.time}
+                    onChange={(e) =>
+                      setReadingForm((f) => ({ ...f, time: e.target.value }))
+                    }
+                    data-ocid="electricity.input"
+                    style={{ ...inputStyle }}
+                  />
+                </div>
+
+                {/* Today's Reading */}
+                <div className="space-y-1.5">
+                  <Label
+                    className="text-xs"
+                    style={{ color: "oklch(0.65 0.010 260)" }}
+                  >
+                    Today's Meter Reading *
+                  </Label>
+                  <Input
+                    type="number"
+                    value={readingForm.todayReading}
+                    onChange={(e) =>
+                      setReadingForm((f) => ({
+                        ...f,
+                        todayReading: e.target.value,
+                      }))
+                    }
+                    placeholder="Enter current meter reading"
+                    data-ocid="electricity.input"
+                    style={{ ...inputStyle }}
+                  />
                 </div>
               </div>
-              <Button
-                type="submit"
-                data-ocid="electricity.submit_button"
-                style={{
-                  background: "oklch(0.45 0.14 55 / 0.20)",
-                  color: "oklch(0.80 0.180 55)",
-                  border: "1px solid oklch(0.55 0.16 55 / 0.4)",
-                }}
-              >
-                Add Reading
-              </Button>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 items-end">
+                {/* Yesterday's Reading (auto) */}
+                <div className="space-y-1.5">
+                  <Label
+                    className="text-xs"
+                    style={{ color: "oklch(0.65 0.010 260)" }}
+                  >
+                    Yesterday's Reading (auto — {yesterdayDate || "select date"}
+                    )
+                  </Label>
+                  <div
+                    className="h-10 flex items-center px-3 rounded-lg text-sm"
+                    style={{
+                      background: "oklch(0.17 0.018 255)",
+                      border: "1px solid oklch(0.28 0.025 252)",
+                      color:
+                        yesterdayReading !== null
+                          ? "oklch(0.88 0.010 260)"
+                          : "oklch(0.50 0.010 260)",
+                    }}
+                  >
+                    {yesterdayReading !== null
+                      ? yesterdayReading
+                      : "No prior reading found — consumption = 0"}
+                  </div>
+                </div>
+
+                {/* Consumption */}
+                <div className="space-y-1.5">
+                  <Label
+                    className="text-xs"
+                    style={{ color: "oklch(0.65 0.010 260)" }}
+                  >
+                    Consumption (auto) — Today − Yesterday × Multiplier
+                  </Label>
+                  <div
+                    className="h-10 flex items-center px-3 rounded-lg text-sm font-bold"
+                    style={{
+                      background: "oklch(0.17 0.018 255)",
+                      border: "1px solid oklch(0.28 0.025 252)",
+                      color: "oklch(0.80 0.180 55)",
+                    }}
+                  >
+                    {consumption.toFixed(2)} {selectedMeter?.unit ?? ""}
+                  </div>
+                </div>
+              </div>
+
+              <div className="flex justify-end">
+                <Button
+                  type="submit"
+                  data-ocid="electricity.submit_button"
+                  style={{
+                    background: "oklch(0.45 0.14 55 / 0.20)",
+                    color: "oklch(0.80 0.180 55)",
+                    border: "1px solid oklch(0.55 0.16 55 / 0.4)",
+                  }}
+                >
+                  Add Reading
+                </Button>
+              </div>
             </form>
           </motion.section>
 
@@ -682,9 +854,10 @@ export default function ElectricityPage() {
                     <TableRow style={{ borderColor: "oklch(0.34 0.030 252)" }}>
                       {[
                         "Date",
+                        "Time",
                         "Meter",
-                        "Start",
-                        "End",
+                        "Yesterday",
+                        "Today",
                         "Consumption",
                         "Unit",
                         "Entered By",
@@ -711,6 +884,12 @@ export default function ElectricityPage() {
                           style={{ color: "oklch(0.68 0.010 260)" }}
                         >
                           {r.date}
+                        </TableCell>
+                        <TableCell
+                          className="text-xs"
+                          style={{ color: "oklch(0.68 0.010 260)" }}
+                        >
+                          {r.time ?? "—"}
                         </TableCell>
                         <TableCell
                           className="font-semibold text-sm"

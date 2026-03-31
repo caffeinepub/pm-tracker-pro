@@ -27,14 +27,16 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Textarea } from "@/components/ui/textarea";
 import {
   CheckCircle2,
+  FileDown,
   FileSpreadsheet,
   Gauge,
   LogOut,
   Plus,
   Trash2,
+  Upload,
 } from "lucide-react";
 import { motion } from "motion/react";
-import { useMemo, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 import MorningPopup from "../components/MorningPopup";
 import NotificationBell from "../components/NotificationBell";
@@ -69,6 +71,7 @@ export default function PredictivePage() {
   const [showPlanForm, setShowPlanForm] = useState(false);
   const [planForm, setPlanForm] = useState({ ...EMPTY_PLAN });
   const [editPlanId, setEditPlanId] = useState<string | null>(null);
+  const importRef = useRef<HTMLInputElement>(null);
 
   const [selectedPlanId, setSelectedPlanId] = useState("");
   const [readingForm, setReadingForm] = useState<{
@@ -183,6 +186,147 @@ export default function PredictivePage() {
     );
   }
 
+  function handleDownloadPDMTemplate() {
+    if (!XLSX) {
+      toast.error("XLSX not available");
+      return;
+    }
+    const wb = XLSX.utils.book_new();
+
+    // Plans sheet
+    const plansData = [
+      {
+        MachineID: machines[0]?.id ?? "MACHINE-001",
+        MachineName: machines[0]?.name ?? "Compressor A",
+        ScheduledDate: new Date().toISOString().split("T")[0],
+        Frequency: "Monthly",
+        Parameters:
+          "Vibration (mm/s), Temperature (°C), Oil Level, Pressure (bar)",
+        Notes: "Monthly predictive maintenance check",
+      },
+    ];
+    XLSX.utils.book_append_sheet(
+      wb,
+      XLSX.utils.json_to_sheet(plansData),
+      "Plans",
+    );
+
+    // Records sheet
+    const recordsData = [
+      {
+        Date: new Date().toISOString().split("T")[0],
+        MachineName: machines[0]?.name ?? "Compressor A",
+        PlanID: "",
+        "Vibration (mm/s)": 2.5,
+        "Temperature (°C)": 45,
+        "Oil Level": "Normal",
+        "Pressure (bar)": 6.2,
+        Remarks: "All parameters within normal range",
+      },
+    ];
+    XLSX.utils.book_append_sheet(
+      wb,
+      XLSX.utils.json_to_sheet(recordsData),
+      "Records",
+    );
+
+    XLSX.writeFile(wb, "PDM_Import_Template.xlsx");
+  }
+
+  function handleImportPlans(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    if (!file || !XLSX) return;
+    const reader = new FileReader();
+    reader.onload = (ev) => {
+      try {
+        const wb = XLSX.read(ev.target?.result, { type: "binary" });
+        let planCount = 0;
+        let recCount = 0;
+
+        // Import Plans sheet
+        const plansSheet = wb.Sheets.Plans;
+        if (plansSheet) {
+          const rows: any[] = XLSX.utils.sheet_to_json(plansSheet);
+          for (const row of rows) {
+            const machineName = String(row.MachineName ?? "").trim();
+            const machineId =
+              String(row.MachineID ?? "").trim() ||
+              machines.find(
+                (m) => m.name.toLowerCase() === machineName.toLowerCase(),
+              )?.id ||
+              `machine-${machineName}`;
+            const params = String(row.Parameters ?? "")
+              .split(",")
+              .map((s: string) => s.trim())
+              .filter(Boolean);
+            if (!machineName || params.length === 0) continue;
+            const plan: PredictivePlan = {
+              id: `pdm-plan-import-${Date.now()}-${planCount}`,
+              machineId,
+              machineName,
+              scheduledDate:
+                String(row.ScheduledDate ?? "").trim() ||
+                new Date().toISOString().split("T")[0],
+              frequency:
+                (row.Frequency as PredictivePlan["frequency"]) || "Monthly",
+              parameters: params,
+              notes: String(row.Notes ?? "").trim(),
+              createdAt: Date.now(),
+            };
+            addPredictivePlan(plan);
+            planCount++;
+          }
+        }
+
+        // Import Records sheet
+        const recsSheet = wb.Sheets.Records;
+        if (recsSheet) {
+          const rows: any[] = XLSX.utils.sheet_to_json(recsSheet);
+          for (const row of rows) {
+            const machineName = String(row.MachineName ?? "").trim();
+            const date = String(row.Date ?? "").trim();
+            if (!machineName || !date) continue;
+            // Build readings from extra columns
+            const skipCols = new Set(["Date", "MachineName", "PlanID"]);
+            const readings: Record<string, string> = {};
+            for (const key of Object.keys(row)) {
+              if (!skipCols.has(key)) {
+                readings[key] = String(row[key]);
+              }
+            }
+            const planId = String(row.PlanID ?? "").trim();
+            const matchPlan = predictivePlans.find(
+              (p) =>
+                p.machineName.toLowerCase() === machineName.toLowerCase() ||
+                (planId && p.id === planId),
+            );
+            const record: PredictiveRecord = {
+              id: `pdm-rec-import-${Date.now()}-${recCount}`,
+              planId: matchPlan?.id ?? planId ?? "",
+              machineId: matchPlan?.machineId ?? machineName,
+              machineName,
+              date,
+              readings,
+              remarks: String(row.Remarks ?? "").trim(),
+              operatorName: user?.name ?? "",
+              operatorUsername: user?.username ?? "",
+              status: "completed",
+              submittedAt: Date.now(),
+            };
+            submitPredictiveRecord(record);
+            recCount++;
+          }
+        }
+
+        toast.success(`Imported: ${planCount} plans, ${recCount} records`);
+      } catch {
+        toast.error("Failed to parse Excel file");
+      }
+    };
+    reader.readAsBinaryString(file);
+    e.target.value = "";
+  }
+
   const navItems = [
     { label: "Dashboard", page: "dashboard" as const },
     { label: "Preventive Maintenance", page: "preventive" as const },
@@ -199,6 +343,13 @@ export default function PredictivePage() {
   return (
     <>
       <MorningPopup />
+      <input
+        ref={importRef}
+        type="file"
+        accept=".xlsx,.xls"
+        style={{ display: "none" }}
+        onChange={handleImportPlans}
+      />
       <div
         className="min-h-screen flex flex-col"
         style={{ background: "oklch(0.165 0.022 252)" }}
@@ -314,7 +465,7 @@ export default function PredictivePage() {
             {/* Plans Tab */}
             <TabsContent value="plans" className="mt-4">
               {user?.role === "admin" && (
-                <div className="mb-4">
+                <div className="flex items-center gap-2 mb-4 flex-wrap">
                   <Button
                     onClick={() => {
                       setPlanForm({ ...EMPTY_PLAN });
@@ -329,6 +480,30 @@ export default function PredictivePage() {
                     }}
                   >
                     <Plus className="w-4 h-4 mr-2" /> Add New Plan
+                  </Button>
+                  <Button
+                    onClick={handleDownloadPDMTemplate}
+                    data-ocid="predictive.secondary_button"
+                    style={{
+                      background: "oklch(0.30 0.050 252 / 0.25)",
+                      color: "oklch(0.68 0.010 260)",
+                      border: "1px solid oklch(0.40 0.030 252 / 0.5)",
+                      fontSize: "13px",
+                    }}
+                  >
+                    <FileDown className="w-4 h-4 mr-2" /> Download Template
+                  </Button>
+                  <Button
+                    onClick={() => importRef.current?.click()}
+                    data-ocid="predictive.upload_button"
+                    style={{
+                      background: "oklch(0.30 0.065 232 / 0.20)",
+                      color: "oklch(0.65 0.150 232)",
+                      border: "1px solid oklch(0.50 0.065 232 / 0.35)",
+                      fontSize: "13px",
+                    }}
+                  >
+                    <Upload className="w-4 h-4 mr-2" /> Import Excel
                   </Button>
                 </div>
               )}
@@ -910,7 +1085,7 @@ export default function PredictivePage() {
                   onChange={(e) =>
                     setPlanForm((f) => ({ ...f, parameters: e.target.value }))
                   }
-                  placeholder="Vibration (mm/s), Temperature (°C), Oil Level, Pressure (bar)"
+                  placeholder="Vibration (mm/s), Temperature (\u00b0C), Oil Level, Pressure (bar)"
                   rows={2}
                   data-ocid="predictive.textarea"
                   style={{ ...inputStyle }}

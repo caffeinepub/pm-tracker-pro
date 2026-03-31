@@ -206,6 +206,8 @@ export interface ElectricityMeter {
 }
 
 export interface MeterReading {
+  time?: string;
+  reading?: number;
   id: string;
   meterId: string;
   meterName: string;

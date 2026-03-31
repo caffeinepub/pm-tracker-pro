@@ -361,6 +361,7 @@ export default function KaizenPage() {
         @media print {
           body > * { display: none !important; }
           #kaizen-print-area { display: block !important; }
+          @page { size: A4; margin: 15mm; }
         }
       `}</style>
 
@@ -372,41 +373,46 @@ export default function KaizenPage() {
           fontFamily: "Arial, sans-serif",
           color: "#000",
           background: "#fff",
-          padding: "24px",
         }}
       >
         {viewSlip && (
-          <div style={{ maxWidth: "720px", margin: "0 auto" }}>
+          <div style={{ maxWidth: "100%", boxSizing: "border-box" }}>
             {/* Header */}
             <div
               style={{
                 textAlign: "center",
-                borderBottom: "3px solid #1a1a2e",
-                paddingBottom: "12px",
-                marginBottom: "16px",
+                borderBottom: "2px solid #222",
+                paddingBottom: "10px",
+                marginBottom: "12px",
+                position: "relative",
               }}
             >
               <h1
                 style={{
-                  fontSize: "20px",
+                  fontSize: "22px",
                   fontWeight: "bold",
                   margin: "0 0 4px 0",
-                  letterSpacing: "2px",
+                  letterSpacing: "1px",
                 }}
               >
                 KAIZEN IMPROVEMENT SLIP
               </h1>
-              <p style={{ fontSize: "12px", color: "#555", margin: 0 }}>
+              <p
+                style={{ fontSize: "12px", color: "#444", margin: "0 0 4px 0" }}
+              >
                 Plant Maintenance Management System
+              </p>
+              <p style={{ fontSize: "11px", color: "#666", margin: 0 }}>
+                Date: {new Date(viewSlip.submittedAt).toLocaleDateString()}
               </p>
             </div>
 
-            {/* Info Table */}
+            {/* Details table */}
             <table
               style={{
                 width: "100%",
                 borderCollapse: "collapse",
-                marginBottom: "14px",
+                marginBottom: "12px",
                 fontSize: "12px",
               }}
             >
@@ -424,21 +430,26 @@ export default function KaizenPage() {
                     ["Submitted By", viewSlip.submittedBy],
                     ["Status", viewSlip.status],
                   ] as [string, string][]
-                ).map(([k, v]) => (
-                  <tr key={k} style={{ borderBottom: "1px solid #ccc" }}>
+                ).map(([k, v], i) => (
+                  <tr key={k}>
                     <td
                       style={{
-                        padding: "6px 10px",
+                        padding: "5px 10px",
                         fontWeight: "600",
-                        background: "#f5f5f5",
+                        background: i % 2 === 0 ? "#f5f5f5" : "#ececec",
                         width: "30%",
                         border: "1px solid #ccc",
+                        fontSize: "12px",
                       }}
                     >
                       {k}
                     </td>
                     <td
-                      style={{ padding: "6px 10px", border: "1px solid #ccc" }}
+                      style={{
+                        padding: "5px 10px",
+                        border: "1px solid #ccc",
+                        fontSize: "12px",
+                      }}
                     >
                       {v}
                     </td>
@@ -459,10 +470,11 @@ export default function KaizenPage() {
                 style={{
                   fontWeight: "700",
                   marginBottom: "6px",
-                  fontSize: "12px",
+                  fontSize: "13px",
+                  margin: "0 0 6px 0",
                 }}
               >
-                Problem Description (Before):
+                Problem / Before Condition:
               </p>
               <p
                 style={{ fontSize: "12px", whiteSpace: "pre-wrap", margin: 0 }}
@@ -470,6 +482,37 @@ export default function KaizenPage() {
                 {viewSlip.problemDescription}
               </p>
             </div>
+
+            {/* Before Photo — full width */}
+            {viewSlip.beforePhotoDataUrl && (
+              <div
+                style={{
+                  border: "1px solid #ccc",
+                  padding: "10px",
+                  marginBottom: "12px",
+                }}
+              >
+                <p
+                  style={{
+                    fontWeight: "700",
+                    fontSize: "13px",
+                    margin: "0 0 8px 0",
+                  }}
+                >
+                  Before Photo:
+                </p>
+                <img
+                  src={viewSlip.beforePhotoDataUrl}
+                  alt="Before"
+                  style={{
+                    maxWidth: "100%",
+                    maxHeight: "280px",
+                    objectFit: "contain",
+                    display: "block",
+                  }}
+                />
+              </div>
+            )}
 
             {/* Improvement Description */}
             <div
@@ -483,10 +526,11 @@ export default function KaizenPage() {
                 style={{
                   fontWeight: "700",
                   marginBottom: "6px",
-                  fontSize: "12px",
+                  fontSize: "13px",
+                  margin: "0 0 6px 0",
                 }}
               >
-                Improvement Description (After):
+                Improvement / After Condition:
               </p>
               <p
                 style={{ fontSize: "12px", whiteSpace: "pre-wrap", margin: 0 }}
@@ -495,94 +539,55 @@ export default function KaizenPage() {
               </p>
             </div>
 
-            {/* Photos side by side */}
-            {(viewSlip.beforePhotoDataUrl || viewSlip.afterPhotoDataUrl) && (
+            {/* After Photo — full width */}
+            {viewSlip.afterPhotoDataUrl && (
               <div
                 style={{
-                  display: "flex",
-                  gap: "16px",
+                  border: "1px solid #ccc",
+                  padding: "10px",
                   marginBottom: "12px",
                 }}
               >
-                {viewSlip.beforePhotoDataUrl && (
-                  <div
-                    style={{
-                      flex: 1,
-                      border: "1px solid #ccc",
-                      padding: "8px",
-                    }}
-                  >
-                    <p
-                      style={{
-                        fontWeight: "700",
-                        fontSize: "11px",
-                        marginBottom: "6px",
-                      }}
-                    >
-                      Before Photo:
-                    </p>
-                    <img
-                      src={viewSlip.beforePhotoDataUrl}
-                      alt="Before"
-                      style={{
-                        maxWidth: "100%",
-                        maxHeight: "200px",
-                        objectFit: "contain",
-                        display: "block",
-                      }}
-                    />
-                  </div>
-                )}
-                {viewSlip.afterPhotoDataUrl && (
-                  <div
-                    style={{
-                      flex: 1,
-                      border: "1px solid #ccc",
-                      padding: "8px",
-                    }}
-                  >
-                    <p
-                      style={{
-                        fontWeight: "700",
-                        fontSize: "11px",
-                        marginBottom: "6px",
-                      }}
-                    >
-                      After Photo:
-                    </p>
-                    <img
-                      src={viewSlip.afterPhotoDataUrl}
-                      alt="After"
-                      style={{
-                        maxWidth: "100%",
-                        maxHeight: "200px",
-                        objectFit: "contain",
-                        display: "block",
-                      }}
-                    />
-                  </div>
-                )}
+                <p
+                  style={{
+                    fontWeight: "700",
+                    fontSize: "13px",
+                    margin: "0 0 8px 0",
+                  }}
+                >
+                  After Photo:
+                </p>
+                <img
+                  src={viewSlip.afterPhotoDataUrl}
+                  alt="After"
+                  style={{
+                    maxWidth: "100%",
+                    maxHeight: "280px",
+                    objectFit: "contain",
+                    display: "block",
+                  }}
+                />
               </div>
             )}
 
             {/* Spares Used */}
-            <div
-              style={{
-                border: "1px solid #ccc",
-                padding: "10px",
-                marginBottom: "14px",
-              }}
-            >
-              <p
+            {viewSlip.spares && viewSlip.spares.length > 0 && (
+              <div
                 style={{
-                  fontWeight: "700",
-                  fontSize: "12px",
-                  marginBottom: "8px",
+                  border: "1px solid #ccc",
+                  padding: "10px",
+                  marginBottom: "12px",
                 }}
               >
-                Spares Used:
-              </p>
-              {viewSlip.spares && viewSlip.spares.length > 0 ? (
+                <p
+                  style={{
+                    fontWeight: "700",
+                    fontSize: "13px",
+                    margin: "0 0 8px 0",
+                  }}
+                >
+                  Spares Used:
+                </p>
                 <table
                   style={{
                     width: "100%",
@@ -592,23 +597,34 @@ export default function KaizenPage() {
                 >
                   <thead>
                     <tr style={{ background: "#f0f0f0" }}>
-                      {["Spare Name", "Part No.", "Qty", "Unit"].map((h) => (
-                        <th
-                          key={h}
-                          style={{
-                            padding: "5px 8px",
-                            border: "1px solid #ccc",
-                            textAlign: "left",
-                          }}
-                        >
-                          {h}
-                        </th>
-                      ))}
+                      {["Sr", "Part Name", "Part No.", "Qty", "Unit"].map(
+                        (h) => (
+                          <th
+                            key={h}
+                            style={{
+                              padding: "5px 8px",
+                              border: "1px solid #ccc",
+                              textAlign: "left",
+                              fontWeight: "600",
+                            }}
+                          >
+                            {h}
+                          </th>
+                        ),
+                      )}
                     </tr>
                   </thead>
                   <tbody>
                     {viewSlip.spares.map((spare, i) => (
                       <tr key={spare.name + spare.partNo + String(i)}>
+                        <td
+                          style={{
+                            padding: "4px 8px",
+                            border: "1px solid #ccc",
+                          }}
+                        >
+                          {i + 1}
+                        </td>
                         <td
                           style={{
                             padding: "4px 8px",
@@ -645,12 +661,8 @@ export default function KaizenPage() {
                     ))}
                   </tbody>
                 </table>
-              ) : (
-                <p style={{ fontSize: "11px", color: "#777", margin: 0 }}>
-                  No spares recorded
-                </p>
-              )}
-            </div>
+              </div>
+            )}
 
             {/* Rejection reason if applicable */}
             {viewSlip.rejectionReason && (
@@ -666,7 +678,7 @@ export default function KaizenPage() {
                   style={{
                     fontWeight: "700",
                     fontSize: "12px",
-                    marginBottom: "4px",
+                    margin: "0 0 4px 0",
                   }}
                 >
                   Rejection Reason:
@@ -677,55 +689,68 @@ export default function KaizenPage() {
               </div>
             )}
 
-            {/* Closing Remarks */}
-            {viewSlip.closedRemarks && (
+            {/* Approval section */}
+            <div
+              style={{
+                display: "flex",
+                gap: "16px",
+                marginTop: "20px",
+                borderTop: "1px solid #ccc",
+                paddingTop: "14px",
+              }}
+            >
               <div
                 style={{
+                  flex: 1,
                   border: "1px solid #ccc",
-                  padding: "10px",
-                  marginBottom: "14px",
+                  padding: "12px",
+                  minHeight: "70px",
                 }}
               >
                 <p
                   style={{
-                    fontWeight: "700",
                     fontSize: "12px",
-                    marginBottom: "4px",
+                    fontWeight: "600",
+                    margin: "0 0 4px 0",
                   }}
                 >
-                  Closing Remarks:
+                  Submitted By:
+                </p>
+                <p style={{ fontSize: "12px", margin: "0 0 8px 0" }}>
+                  {viewSlip.submittedBy}
                 </p>
                 <p style={{ fontSize: "12px", margin: 0 }}>
-                  {viewSlip.closedRemarks}
+                  Date: {new Date(viewSlip.submittedAt).toLocaleDateString()}
                 </p>
               </div>
-            )}
-
-            {/* Footer signature line */}
-            <div
-              style={{
-                display: "flex",
-                justifyContent: "space-between",
-                marginTop: "32px",
-                gap: "24px",
-                borderTop: "1px solid #ccc",
-                paddingTop: "16px",
-              }}
-            >
-              {["Submitted By / Operator", "Approved By / Admin", "Date"].map(
-                (label) => (
-                  <div key={label} style={{ flex: 1, textAlign: "center" }}>
-                    <div
-                      style={{
-                        borderBottom: "1px solid #555",
-                        height: "40px",
-                        marginBottom: "6px",
-                      }}
-                    />
-                    <p style={{ fontSize: "10px", color: "#666" }}>{label}</p>
-                  </div>
-                ),
-              )}
+              <div
+                style={{
+                  flex: 1,
+                  border: "1px solid #ccc",
+                  padding: "12px",
+                  minHeight: "70px",
+                }}
+              >
+                <p
+                  style={{
+                    fontSize: "12px",
+                    fontWeight: "600",
+                    margin: "0 0 4px 0",
+                  }}
+                >
+                  Approved By:
+                </p>
+                <div
+                  style={{
+                    borderBottom: "1px solid #555",
+                    height: "28px",
+                    marginBottom: "6px",
+                  }}
+                />
+                <p style={{ fontSize: "12px", margin: 0 }}>
+                  Date: _____________
+                </p>
+              </div>
             </div>
           </div>
         )}
