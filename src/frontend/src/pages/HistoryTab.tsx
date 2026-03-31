@@ -392,11 +392,13 @@ export default function HistoryTab({
               </SelectTrigger>
               <SelectContent style={{ background: "oklch(0.22 0.022 252)" }}>
                 <SelectItem value="all">All Machines</SelectItem>
-                {machines.map((m) => (
-                  <SelectItem key={m.id} value={m.id}>
-                    {m.name}
-                  </SelectItem>
-                ))}
+                {machines
+                  .filter((m) => m.id)
+                  .map((m) => (
+                    <SelectItem key={m.id} value={m.id}>
+                      {m.name}
+                    </SelectItem>
+                  ))}
               </SelectContent>
             </Select>
           </div>
@@ -506,11 +508,13 @@ export default function HistoryTab({
                   <SelectContent
                     style={{ background: "oklch(0.22 0.022 252)" }}
                   >
-                    {machines.map((m) => (
-                      <SelectItem key={m.id} value={m.id}>
-                        {m.name}
-                      </SelectItem>
-                    ))}
+                    {machines
+                      .filter((m) => m.id)
+                      .map((m) => (
+                        <SelectItem key={m.id} value={m.id}>
+                          {m.name}
+                        </SelectItem>
+                      ))}
                   </SelectContent>
                 </Select>
               </div>

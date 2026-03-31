@@ -1180,15 +1180,17 @@ export default function BreakdownPanelPage() {
                     <SelectContent
                       style={{ background: "oklch(0.22 0.022 252)" }}
                     >
-                      {machines.map((m) => (
-                        <SelectItem
-                          key={m.id}
-                          value={m.id}
-                          style={{ color: "oklch(0.88 0.010 260)" }}
-                        >
-                          {m.name}
-                        </SelectItem>
-                      ))}
+                      {machines
+                        .filter((m) => m.id)
+                        .map((m) => (
+                          <SelectItem
+                            key={m.id}
+                            value={m.id}
+                            style={{ color: "oklch(0.88 0.010 260)" }}
+                          >
+                            {m.name}
+                          </SelectItem>
+                        ))}
                     </SelectContent>
                   </Select>
                 </div>
@@ -1495,11 +1497,13 @@ export default function BreakdownPanelPage() {
                       <SelectContent
                         style={{ background: "oklch(0.22 0.022 252)" }}
                       >
-                        {machines.map((m) => (
-                          <SelectItem key={m.id} value={m.id}>
-                            {m.name}
-                          </SelectItem>
-                        ))}
+                        {machines
+                          .filter((m) => m.id)
+                          .map((m) => (
+                            <SelectItem key={m.id} value={m.id}>
+                              {m.name}
+                            </SelectItem>
+                          ))}
                       </SelectContent>
                     </Select>
                   </div>

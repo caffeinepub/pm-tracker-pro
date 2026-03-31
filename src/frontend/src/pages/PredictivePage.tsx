@@ -820,15 +820,17 @@ export default function PredictivePage() {
                     >
                       -- Select Machine --
                     </SelectItem>
-                    {machines.map((m) => (
-                      <SelectItem
-                        key={m.id}
-                        value={m.id}
-                        style={{ color: "oklch(0.88 0.010 260)" }}
-                      >
-                        {m.name}
-                      </SelectItem>
-                    ))}
+                    {machines
+                      .filter((m) => m.id)
+                      .map((m) => (
+                        <SelectItem
+                          key={m.id}
+                          value={m.id}
+                          style={{ color: "oklch(0.88 0.010 260)" }}
+                        >
+                          {m.name}
+                        </SelectItem>
+                      ))}
                   </SelectContent>
                 </Select>
               </div>

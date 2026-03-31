@@ -837,11 +837,13 @@ export default function TaskListPage() {
                   </SelectTrigger>
                   <SelectContent>
                     <SelectItem value="none">-- Select User --</SelectItem>
-                    {userList.map((u) => (
-                      <SelectItem key={u.username} value={u.username}>
-                        {u.name} ({u.username})
-                      </SelectItem>
-                    ))}
+                    {userList
+                      .filter((u) => u.username)
+                      .map((u) => (
+                        <SelectItem key={u.username} value={u.username}>
+                          {u.name} ({u.username})
+                        </SelectItem>
+                      ))}
                   </SelectContent>
                 </Select>
               </div>
@@ -1089,11 +1091,13 @@ export default function TaskListPage() {
                   </SelectTrigger>
                   <SelectContent>
                     <SelectItem value="none">-- Select User --</SelectItem>
-                    {userList.map((u) => (
-                      <SelectItem key={u.username} value={u.username}>
-                        {u.name} ({u.username})
-                      </SelectItem>
-                    ))}
+                    {userList
+                      .filter((u) => u.username)
+                      .map((u) => (
+                        <SelectItem key={u.username} value={u.username}>
+                          {u.name} ({u.username})
+                        </SelectItem>
+                      ))}
                   </SelectContent>
                 </Select>
               </div>

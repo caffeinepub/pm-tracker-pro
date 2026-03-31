@@ -360,11 +360,13 @@ export default function HistoryPage() {
               }}
             >
               <SelectItem value="all">All Machines</SelectItem>
-              {machines.map((m) => (
-                <SelectItem key={m.id} value={m.id}>
-                  {m.name}
-                </SelectItem>
-              ))}
+              {machines
+                .filter((m) => m.id)
+                .map((m) => (
+                  <SelectItem key={m.id} value={m.id}>
+                    {m.name}
+                  </SelectItem>
+                ))}
             </SelectContent>
           </Select>
 
@@ -677,11 +679,13 @@ export default function HistoryPage() {
                       borderColor: "oklch(0.28 0.030 252)",
                     }}
                   >
-                    {machines.map((m) => (
-                      <SelectItem key={m.id} value={m.id}>
-                        {m.name}
-                      </SelectItem>
-                    ))}
+                    {machines
+                      .filter((m) => m.id)
+                      .map((m) => (
+                        <SelectItem key={m.id} value={m.id}>
+                          {m.name}
+                        </SelectItem>
+                      ))}
                   </SelectContent>
                 </Select>
               </div>
