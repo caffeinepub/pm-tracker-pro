@@ -139,12 +139,14 @@ export interface BDTargets {
   };
   "Machine Shop": { bdPct: number; mttr: number; mtbf: number; uptime: number };
   Utility: { bdPct: number; mttr: number; mtbf: number; uptime: number };
+  Overall: { bdPct: number; mttr: number; mtbf: number; uptime: number };
 }
 
 const DEFAULT_BD_TARGETS: BDTargets = {
   "Powder Coating": { bdPct: 5, mttr: 60, mtbf: 500, uptime: 95 },
   "Machine Shop": { bdPct: 5, mttr: 60, mtbf: 500, uptime: 95 },
   Utility: { bdPct: 5, mttr: 60, mtbf: 500, uptime: 95 },
+  Overall: { bdPct: 5, mttr: 60, mtbf: 500, uptime: 95 },
 };
 
 const MACHINES_KEY = "pm_tracker_machines";

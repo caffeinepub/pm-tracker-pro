@@ -131,6 +131,7 @@ export default function TaskListPage() {
   const [statusForm, setStatusForm] = useState({
     status: "not-started" as TaskRecord["status"],
     remark: "",
+    photoDataUrl: "",
   });
   const [assignTarget, setAssignTarget] = useState("");
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -204,6 +205,7 @@ export default function TaskListPage() {
     updateTask(statusUpdateTask.id, {
       status: statusForm.status,
       lastUpdatedRemark: statusForm.remark,
+      lastUpdatedPhoto: statusForm.photoDataUrl,
       statusHistory: [
         ...(statusUpdateTask.statusHistory ?? []),
         {
@@ -216,6 +218,7 @@ export default function TaskListPage() {
     });
     toast.success("Status updated");
     setStatusUpdateTask(null);
+    setStatusForm({ status: "not-started", remark: "", photoDataUrl: "" });
   };
 
   const handleAssign = () => {
@@ -257,6 +260,23 @@ export default function TaskListPage() {
       `Task_List_${new Date().toISOString().slice(0, 10)}.xlsx`,
     );
     toast.success("Tasks exported");
+  };
+
+  const handleDownloadTemplate = () => {
+    const wb = XLSX.utils.book_new();
+    const ws = XLSX.utils.aoa_to_sheet([
+      ["Title", "Description", "Priority", "AssignedTo", "DueDate", "Status"],
+      [
+        "Fix pump motor",
+        "Check and replace bearings if needed",
+        "high",
+        "operator1",
+        "2026-04-15",
+        "not-started",
+      ],
+    ]);
+    XLSX.utils.book_append_sheet(wb, ws, "Tasks");
+    XLSX.writeFile(wb, "Task_Template.xlsx");
   };
 
   const handleImport = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -375,6 +395,18 @@ export default function TaskListPage() {
                   }}
                 >
                   <Download className="w-3.5 h-3.5 mr-1" /> Export
+                </Button>
+                <Button
+                  data-ocid="tasklist.secondary_button"
+                  size="sm"
+                  onClick={handleDownloadTemplate}
+                  style={{
+                    background: "oklch(0.50 0.065 232 / 0.20)",
+                    border: "1px solid oklch(0.44 0.13 245 / 0.4)",
+                    color: "oklch(0.70 0.13 245)",
+                  }}
+                >
+                  <Download className="w-3.5 h-3.5 mr-1" /> Template
                 </Button>
                 <Button
                   data-ocid="tasklist.add.button"
@@ -548,15 +580,31 @@ export default function TaskListPage() {
                           Remark: {task.lastUpdatedRemark}
                         </p>
                       )}
+                      {(task as any).lastUpdatedPhoto && (
+                        <img
+                          src={(task as any).lastUpdatedPhoto}
+                          alt="Status update"
+                          style={{
+                            maxHeight: "60px",
+                            marginTop: "4px",
+                            borderRadius: "4px",
+                          }}
+                        />
+                      )}
                     </div>
                     <div className="flex items-center gap-2 shrink-0">
-                      {user?.role !== "admin" && (
+                      {(user?.role !== "admin" ||
+                        task.assignedTo === user?.username) && (
                         <Button
                           data-ocid={`tasklist.edit_button.${idx + 1}`}
                           size="sm"
                           onClick={() => {
                             setStatusUpdateTask(task);
-                            setStatusForm({ status: task.status, remark: "" });
+                            setStatusForm({
+                              status: task.status,
+                              remark: "",
+                              photoDataUrl: "",
+                            });
                           }}
                           style={{
                             background: "oklch(0.30 0.09 245 / 0.25)",
@@ -927,6 +975,44 @@ export default function TaskListPage() {
                     borderColor: "oklch(0.34 0.030 252)",
                   }}
                 />
+              </div>
+              <div>
+                <Label
+                  className="text-xs font-semibold mb-1 block"
+                  style={{ color: "oklch(0.68 0.010 260)" }}
+                >
+                  Photo (optional)
+                </Label>
+                <input
+                  data-ocid="tasklist.upload_button"
+                  type="file"
+                  accept="image/*"
+                  className="block w-full text-xs"
+                  style={{ color: "oklch(0.68 0.010 260)" }}
+                  onChange={(e) => {
+                    const file = e.target.files?.[0];
+                    if (!file) return;
+                    const reader = new FileReader();
+                    reader.onload = (ev) => {
+                      setStatusForm((f) => ({
+                        ...f,
+                        photoDataUrl: (ev.target?.result as string) ?? "",
+                      }));
+                    };
+                    reader.readAsDataURL(file);
+                  }}
+                />
+                {statusForm.photoDataUrl && (
+                  <img
+                    src={statusForm.photoDataUrl}
+                    alt="preview"
+                    style={{
+                      maxHeight: "80px",
+                      marginTop: "6px",
+                      borderRadius: "6px",
+                    }}
+                  />
+                )}
               </div>
               <div className="flex justify-end gap-2">
                 <Button

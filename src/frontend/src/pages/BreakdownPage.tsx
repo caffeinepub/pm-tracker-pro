@@ -335,7 +335,7 @@ export default function BreakdownPage() {
 
         <main className="flex-1 max-w-5xl mx-auto px-4 py-6 w-full pb-24 md:pb-8">
           {/* New entry button */}
-          {user?.role === "operator" && (
+          {(user?.role === "operator" || user?.role === "admin") && (
             <motion.div
               initial={{ opacity: 0, y: -10 }}
               animate={{ opacity: 1, y: 0 }}
@@ -809,7 +809,7 @@ export default function BreakdownPage() {
                   {myRecords.length}
                 </Badge>
               </div>
-              {user?.role === "operator" && (
+              {(user?.role === "operator" || user?.role === "admin") && (
                 <Button
                   size="sm"
                   onClick={() => setShowForm(true)}

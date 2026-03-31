@@ -17,6 +17,9 @@ import {
   Bar,
   BarChart,
   CartesianGrid,
+  Line,
+  LineChart,
+  ReferenceLine,
   ResponsiveContainer,
   Tooltip,
   XAxis,
@@ -73,6 +76,8 @@ export default function AnalysisPage() {
     breakdownRecords,
     sectionHoursConfigs,
     updateSectionHoursConfig,
+    bdTargets,
+    updateBDTargets,
   } = useApp();
 
   // Local edit state for admin form per section
@@ -88,6 +93,13 @@ export default function AnalysisPage() {
       };
     }
     return init;
+  });
+
+  const [editingOverallTargets, setEditingOverallTargets] = useState({
+    bdPct: String(bdTargets.Overall?.bdPct ?? 5),
+    mttr: String(bdTargets.Overall?.mttr ?? 60),
+    mtbf: String(bdTargets.Overall?.mtbf ?? 500),
+    uptime: String(bdTargets.Overall?.uptime ?? 95),
   });
 
   const machineMetrics = useMemo<MachineMetrics[]>(() => {
@@ -177,6 +189,110 @@ export default function AnalysisPage() {
 
   const fmt = (n: number, dec = 1) =>
     Number.isFinite(n) ? n.toFixed(dec) : "0.0";
+
+  const MONTH_NAMES = [
+    "Jan",
+    "Feb",
+    "Mar",
+    "Apr",
+    "May",
+    "Jun",
+    "Jul",
+    "Aug",
+    "Sep",
+    "Oct",
+    "Nov",
+    "Dec",
+  ];
+  const CURRENT_YEAR = new Date().getFullYear();
+
+  function getSectionMonthlyData(section: Section) {
+    const sectionMachineIds = machines
+      .filter((m) => m.section === section)
+      .map((m) => m.id);
+    const cfg = sectionHoursConfigs.find((c) => c.section === section);
+    const availHrs = cfg ? cfg.availableProductionHrs - cfg.powerOff : 0;
+
+    return MONTH_NAMES.map((monthName, monthIdx) => {
+      const monthBds = breakdownRecords.filter((r) => {
+        if (r.status !== "approved-breakdown") return false;
+        if (!sectionMachineIds.includes(r.machineId)) return false;
+        const d = new Date(r.date);
+        return d.getFullYear() === CURRENT_YEAR && d.getMonth() === monthIdx;
+      });
+      const bdCount = monthBds.length;
+      const bdHours = monthBds.reduce(
+        (sum, r) => sum + (r.durationMinutes ?? 0) / 60,
+        0,
+      );
+      const bdPct = availHrs > 0 ? (bdHours / availHrs) * 100 : 0;
+      const mttr = bdCount > 0 ? bdHours / bdCount : 0;
+      const mtbf = bdCount > 0 ? (availHrs - bdHours) / bdCount : availHrs;
+      const uptime = mttr + mtbf > 0 ? (mtbf / (mttr + mtbf)) * 100 : 100;
+      return { month: monthName, bdPct, mttr, mtbf, uptime };
+    });
+  }
+
+  function getOverallPlantMetrics() {
+    const totalAvailHrs = SECTIONS.reduce((sum, section) => {
+      const cfg = sectionHoursConfigs.find((c) => c.section === section);
+      return (
+        sum + ((cfg?.availableProductionHrs ?? 2000) - (cfg?.powerOff ?? 0))
+      );
+    }, 0);
+    const approvedBds = breakdownRecords.filter(
+      (r) => r.status === "approved-breakdown",
+    );
+    const totalBdCount = approvedBds.length;
+    const totalBdHours = approvedBds.reduce(
+      (s, r) => s + (r.durationMinutes ?? 0) / 60,
+      0,
+    );
+    const bdPercent =
+      totalAvailHrs > 0 ? (totalBdHours / totalAvailHrs) * 100 : 0;
+    const mttr = totalBdCount > 0 ? totalBdHours / totalBdCount : 0;
+    const mtbf =
+      totalBdCount > 0
+        ? (totalAvailHrs - totalBdHours) / totalBdCount
+        : totalAvailHrs;
+    const uptime = mttr + mtbf > 0 ? (mtbf / (mttr + mtbf)) * 100 : 100;
+    return {
+      totalAvailHrs,
+      totalBdCount,
+      totalBdHours,
+      bdPercent,
+      mttr,
+      mtbf,
+      uptime,
+    };
+  }
+
+  function getOverallMonthlyData() {
+    return MONTH_NAMES.map((monthName, monthIdx) => {
+      const totalAvailHrs = SECTIONS.reduce((sum, section) => {
+        const cfg = sectionHoursConfigs.find((c) => c.section === section);
+        return (
+          sum + ((cfg?.availableProductionHrs ?? 2000) - (cfg?.powerOff ?? 0))
+        );
+      }, 0);
+      const monthBds = breakdownRecords.filter((r) => {
+        if (r.status !== "approved-breakdown") return false;
+        const d = new Date(r.date);
+        return d.getFullYear() === CURRENT_YEAR && d.getMonth() === monthIdx;
+      });
+      const bdCount = monthBds.length;
+      const bdHours = monthBds.reduce(
+        (sum, r) => sum + (r.durationMinutes ?? 0) / 60,
+        0,
+      );
+      const bdPct = totalAvailHrs > 0 ? (bdHours / totalAvailHrs) * 100 : 0;
+      const mttr = bdCount > 0 ? bdHours / bdCount : 0;
+      const mtbf =
+        bdCount > 0 ? (totalAvailHrs - bdHours) / bdCount : totalAvailHrs;
+      const uptime = mttr + mtbf > 0 ? (mtbf / (mttr + mtbf)) * 100 : 100;
+      return { month: monthName, bdPct, mttr, mtbf, uptime };
+    });
+  }
 
   return (
     <>
@@ -272,11 +388,19 @@ export default function AnalysisPage() {
             </p>
           </div>
 
-          <Tabs defaultValue="Powder Coating" data-ocid="analysis.panel">
+          <Tabs defaultValue="Overall" data-ocid="analysis.panel">
             <TabsList
               className="mb-6 flex flex-wrap gap-1 h-auto p-1"
               style={{ background: "oklch(0.22 0.022 252)" }}
             >
+              <TabsTrigger
+                value="Overall"
+                data-ocid="analysis.tab"
+                className="flex items-center gap-1.5 text-xs"
+                style={{}}
+              >
+                <BarChart2 className="w-3.5 h-3.5" /> Overall Plant
+              </TabsTrigger>
               {SECTIONS.map((section) => {
                 const c = SECTION_COLORS[section];
                 const count = machines.filter(
@@ -300,6 +424,357 @@ export default function AnalysisPage() {
                 );
               })}
             </TabsList>
+
+            <TabsContent value="Overall">
+              <motion.div
+                initial={{ opacity: 0, y: 10 }}
+                animate={{ opacity: 1, y: 0 }}
+                className="space-y-6"
+              >
+                {/* Overall Target Config Card — admin only */}
+                <div
+                  className="industrial-card p-4"
+                  style={{ border: "1px solid oklch(0.80 0.180 55 / 0.35)" }}
+                >
+                  <div className="flex items-center gap-2 mb-3">
+                    <BarChart2
+                      className="w-4 h-4"
+                      style={{ color: "oklch(0.80 0.180 55)" }}
+                    />
+                    <span
+                      className="text-sm font-semibold"
+                      style={{
+                        color: "oklch(0.80 0.180 55)",
+                        fontFamily: "BricolageGrotesque, sans-serif",
+                      }}
+                    >
+                      Overall Plant — KPI Targets
+                    </span>
+                  </div>
+                  {user?.role === "admin" ? (
+                    <div className="flex flex-wrap items-end gap-4">
+                      {[
+                        {
+                          id: "overall-bdpct",
+                          label: "Target BD%",
+                          key: "bdPct" as const,
+                          placeholder: "5",
+                        },
+                        {
+                          id: "overall-mttr",
+                          label: "Target MTTR (hrs)",
+                          key: "mttr" as const,
+                          placeholder: "60",
+                        },
+                        {
+                          id: "overall-mtbf",
+                          label: "Target MTBF (hrs)",
+                          key: "mtbf" as const,
+                          placeholder: "500",
+                        },
+                        {
+                          id: "overall-uptime",
+                          label: "Target Uptime%",
+                          key: "uptime" as const,
+                          placeholder: "95",
+                        },
+                      ].map(({ id, label, key, placeholder }) => (
+                        <div key={key} className="flex flex-col gap-1">
+                          <label
+                            htmlFor={id}
+                            className="text-xs"
+                            style={{ color: "oklch(0.68 0.010 260)" }}
+                          >
+                            {label}
+                          </label>
+                          <Input
+                            id={id}
+                            type="number"
+                            min={0}
+                            value={editingOverallTargets[key]}
+                            placeholder={placeholder}
+                            onChange={(e) =>
+                              setEditingOverallTargets((prev) => ({
+                                ...prev,
+                                [key]: e.target.value,
+                              }))
+                            }
+                            className="w-40 text-sm"
+                            style={{
+                              background: "oklch(0.22 0.022 252)",
+                              borderColor: "oklch(0.34 0.030 252)",
+                              color: "oklch(0.88 0.010 260)",
+                            }}
+                            data-ocid="analysis.input"
+                          />
+                        </div>
+                      ))}
+                      <Button
+                        type="button"
+                        size="sm"
+                        onClick={() => {
+                          updateBDTargets({
+                            Overall: {
+                              bdPct: Number(editingOverallTargets.bdPct) || 5,
+                              mttr: Number(editingOverallTargets.mttr) || 60,
+                              mtbf: Number(editingOverallTargets.mtbf) || 500,
+                              uptime:
+                                Number(editingOverallTargets.uptime) || 95,
+                            },
+                          });
+                        }}
+                        className="flex items-center gap-1.5"
+                        style={{
+                          background: "oklch(0.80 0.180 55)",
+                          color: "oklch(0.12 0.010 260)",
+                        }}
+                        data-ocid="analysis.save_button"
+                      >
+                        <Save className="w-3.5 h-3.5" />
+                        Save Targets
+                      </Button>
+                    </div>
+                  ) : (
+                    <div className="flex flex-wrap items-center gap-6">
+                      {[
+                        {
+                          label: "Target BD%",
+                          value: bdTargets.Overall?.bdPct ?? 5,
+                        },
+                        {
+                          label: "Target MTTR (hrs)",
+                          value: bdTargets.Overall?.mttr ?? 60,
+                        },
+                        {
+                          label: "Target MTBF (hrs)",
+                          value: bdTargets.Overall?.mtbf ?? 500,
+                        },
+                        {
+                          label: "Target Uptime%",
+                          value: bdTargets.Overall?.uptime ?? 95,
+                        },
+                      ].map(({ label, value }) => (
+                        <div key={label}>
+                          <span
+                            className="text-xs block"
+                            style={{ color: "oklch(0.68 0.010 260)" }}
+                          >
+                            {label}
+                          </span>
+                          <span
+                            className="text-sm font-bold"
+                            style={{ color: "oklch(0.80 0.180 55)" }}
+                          >
+                            {value}
+                          </span>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+
+                {/* Overall KPI Cards */}
+                {(() => {
+                  const ov = getOverallPlantMetrics();
+                  const tgt = bdTargets.Overall ?? {
+                    bdPct: 5,
+                    mttr: 60,
+                    mtbf: 500,
+                    uptime: 95,
+                  };
+                  const amberColor = "oklch(0.80 0.180 55)";
+                  const greenColor = "oklch(0.75 0.130 145)";
+                  const redColor = "oklch(0.72 0.200 25)";
+                  const kpis = [
+                    {
+                      label: "Total BD Count",
+                      value: String(ov.totalBdCount),
+                      hint: "All sections combined",
+                      color: amberColor,
+                    },
+                    {
+                      label: "Total BD Hours",
+                      value: `${fmt(ov.totalBdHours)} hrs`,
+                      hint: "Sum of all breakdown durations",
+                      color: amberColor,
+                    },
+                    {
+                      label: "BD%",
+                      value: `${fmt(ov.bdPercent)}%`,
+                      hint: `Target: ${tgt.bdPct}%`,
+                      color: ov.bdPercent <= tgt.bdPct ? greenColor : redColor,
+                    },
+                    {
+                      label: "MTTR (hrs)",
+                      value: fmt(ov.mttr),
+                      hint: `Target: ${tgt.mttr} hrs`,
+                      color: ov.mttr <= tgt.mttr ? greenColor : redColor,
+                    },
+                    {
+                      label: "MTBF (hrs)",
+                      value: fmt(ov.mtbf),
+                      hint: `Target: ${tgt.mtbf} hrs`,
+                      color: ov.mtbf >= tgt.mtbf ? greenColor : redColor,
+                    },
+                    {
+                      label: "Uptime%",
+                      value: `${fmt(ov.uptime)}%`,
+                      hint: `Target: ${tgt.uptime}%`,
+                      color: ov.uptime >= tgt.uptime ? greenColor : redColor,
+                    },
+                  ];
+                  return (
+                    <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-4">
+                      {kpis.map((kpi) => (
+                        <div
+                          key={kpi.label}
+                          className="industrial-card p-4"
+                          style={{
+                            border: "1px solid oklch(0.80 0.180 55 / 0.25)",
+                          }}
+                        >
+                          <div
+                            className="text-xs mb-1"
+                            style={{ color: "oklch(0.68 0.010 260)" }}
+                          >
+                            {kpi.label}
+                          </div>
+                          <div
+                            className="text-2xl font-bold truncate"
+                            style={{
+                              color: kpi.color,
+                              fontFamily: "BricolageGrotesque, sans-serif",
+                            }}
+                          >
+                            {kpi.value}
+                          </div>
+                          <div
+                            className="text-xs mt-1"
+                            style={{ color: "oklch(0.50 0.010 260)" }}
+                          >
+                            {kpi.hint}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  );
+                })()}
+
+                {/* Overall Monthly Charts */}
+                {(() => {
+                  const monthlyData = getOverallMonthlyData();
+                  const tgt = bdTargets.Overall ?? {
+                    bdPct: 5,
+                    mttr: 60,
+                    mtbf: 500,
+                    uptime: 95,
+                  };
+                  const chartStyle = {
+                    background: "oklch(0.19 0.020 255)",
+                    border: "1px solid oklch(0.80 0.180 55 / 0.25)",
+                    borderRadius: "10px",
+                    padding: "16px",
+                  };
+                  const gridStroke = "oklch(0.34 0.030 252 / 0.5)";
+                  const tickFill = "oklch(0.68 0.010 260)";
+                  const ttStyle = {
+                    background: "oklch(0.22 0.022 252)",
+                    border: "1px solid oklch(0.34 0.030 252)",
+                    color: "oklch(0.88 0.010 260)",
+                    borderRadius: "8px",
+                    fontSize: "12px",
+                  };
+                  const charts = [
+                    {
+                      key: "bdPct",
+                      title: `BD% — Overall Yearly Trend (${CURRENT_YEAR})`,
+                      target: tgt.bdPct,
+                      color: "oklch(0.72 0.170 27)",
+                    },
+                    {
+                      key: "mttr",
+                      title: `MTTR (hrs) — Overall Yearly Trend (${CURRENT_YEAR})`,
+                      target: tgt.mttr,
+                      color: "oklch(0.65 0.150 232)",
+                    },
+                    {
+                      key: "mtbf",
+                      title: `MTBF (hrs) — Overall Yearly Trend (${CURRENT_YEAR})`,
+                      target: tgt.mtbf,
+                      color: "oklch(0.75 0.130 145)",
+                    },
+                    {
+                      key: "uptime",
+                      title: `Uptime% — Overall Yearly Trend (${CURRENT_YEAR})`,
+                      target: tgt.uptime,
+                      color: "oklch(0.80 0.180 55)",
+                    },
+                  ];
+                  return (
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      {charts.map(({ key, title, target, color }) => (
+                        <div key={key} style={chartStyle}>
+                          <h3
+                            className="text-xs font-semibold mb-3"
+                            style={{
+                              color: "oklch(0.78 0.010 260)",
+                              fontFamily: "BricolageGrotesque, sans-serif",
+                            }}
+                          >
+                            {title}
+                          </h3>
+                          <ResponsiveContainer width="100%" height={220}>
+                            <BarChart
+                              data={monthlyData}
+                              margin={{
+                                top: 4,
+                                right: 8,
+                                left: -16,
+                                bottom: 0,
+                              }}
+                            >
+                              <CartesianGrid
+                                strokeDasharray="3 3"
+                                stroke={gridStroke}
+                              />
+                              <XAxis
+                                dataKey="month"
+                                tick={{ fill: tickFill, fontSize: 10 }}
+                                axisLine={false}
+                                tickLine={false}
+                              />
+                              <YAxis
+                                tick={{ fill: tickFill, fontSize: 10 }}
+                                axisLine={false}
+                                tickLine={false}
+                              />
+                              <Tooltip contentStyle={ttStyle} />
+                              <Bar
+                                dataKey={key}
+                                fill={color}
+                                radius={[3, 3, 0, 0]}
+                                name={key.toUpperCase()}
+                              />
+                              <ReferenceLine
+                                y={target}
+                                stroke="oklch(0.80 0.180 55)"
+                                strokeDasharray="5 3"
+                                label={{
+                                  value: `Target: ${target}`,
+                                  fill: "oklch(0.70 0.010 260)",
+                                  fontSize: 9,
+                                  position: "insideTopRight",
+                                }}
+                              />
+                            </BarChart>
+                          </ResponsiveContainer>
+                        </div>
+                      ))}
+                    </div>
+                  );
+                })()}
+              </motion.div>
+            </TabsContent>
 
             {SECTIONS.map((section) => {
               const c = SECTION_COLORS[section];
@@ -565,6 +1040,121 @@ export default function AnalysisPage() {
                             </div>
                           ))}
                         </div>
+
+                        {/* Monthly Trend Line Charts */}
+                        {(() => {
+                          const monthlyData = getSectionMonthlyData(section);
+                          const tgt = bdTargets[section];
+                          const chartStyle = {
+                            background: "oklch(0.19 0.020 255)",
+                            border: `1px solid ${c.border}`,
+                            borderRadius: "10px",
+                            padding: "16px",
+                          };
+                          const gridStroke = "oklch(0.34 0.030 252 / 0.5)";
+                          const tickFill = "oklch(0.68 0.010 260)";
+                          const ttStyle = {
+                            background: "oklch(0.22 0.022 252)",
+                            border: "1px solid oklch(0.34 0.030 252)",
+                            color: "oklch(0.88 0.010 260)",
+                            borderRadius: "8px",
+                            fontSize: "12px",
+                          };
+                          return (
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                              {[
+                                {
+                                  key: "bdPct",
+                                  title: `BD% — Monthly Trend (${CURRENT_YEAR})`,
+                                  target: tgt?.bdPct,
+                                  color: "oklch(0.72 0.170 27)",
+                                },
+                                {
+                                  key: "mttr",
+                                  title: `MTTR — Monthly Trend (${CURRENT_YEAR})`,
+                                  target: tgt?.mttr,
+                                  color: "oklch(0.65 0.150 232)",
+                                },
+                                {
+                                  key: "mtbf",
+                                  title: `MTBF — Monthly Trend (${CURRENT_YEAR})`,
+                                  target: tgt?.mtbf,
+                                  color: "oklch(0.75 0.130 145)",
+                                },
+                                {
+                                  key: "uptime",
+                                  title: `Uptime% — Monthly Trend (${CURRENT_YEAR})`,
+                                  target: tgt?.uptime,
+                                  color: "oklch(0.80 0.180 55)",
+                                },
+                              ].map(({ key, title, target, color }) => (
+                                <div key={key} style={chartStyle}>
+                                  <h3
+                                    className="text-xs font-semibold mb-3"
+                                    style={{
+                                      color: "oklch(0.78 0.010 260)",
+                                      fontFamily:
+                                        "BricolageGrotesque, sans-serif",
+                                    }}
+                                  >
+                                    {title}
+                                  </h3>
+                                  <ResponsiveContainer
+                                    width="100%"
+                                    height={160}
+                                  >
+                                    <LineChart
+                                      data={monthlyData}
+                                      margin={{
+                                        top: 4,
+                                        right: 8,
+                                        left: -16,
+                                        bottom: 0,
+                                      }}
+                                    >
+                                      <CartesianGrid
+                                        strokeDasharray="3 3"
+                                        stroke={gridStroke}
+                                      />
+                                      <XAxis
+                                        dataKey="month"
+                                        tick={{ fill: tickFill, fontSize: 10 }}
+                                        axisLine={false}
+                                        tickLine={false}
+                                      />
+                                      <YAxis
+                                        tick={{ fill: tickFill, fontSize: 10 }}
+                                        axisLine={false}
+                                        tickLine={false}
+                                      />
+                                      <Tooltip contentStyle={ttStyle} />
+                                      <Line
+                                        type="monotone"
+                                        dataKey={key}
+                                        stroke={color}
+                                        strokeWidth={2}
+                                        dot={{ fill: color, r: 3 }}
+                                      />
+                                      {target !== undefined && (
+                                        <ReferenceLine
+                                          y={target}
+                                          stroke="oklch(0.65 0.010 260)"
+                                          strokeDasharray="5 3"
+                                          label={{
+                                            value: `Target: ${target}`,
+                                            fill: "oklch(0.60 0.010 260)",
+                                            fontSize: 9,
+                                            position: "insideTopRight",
+                                          }}
+                                        />
+                                      )}
+                                    </LineChart>
+                                  </ResponsiveContainer>
+                                </div>
+                              ))}
+                            </div>
+                          );
+                        })()}
 
                         {/* Bar chart: Uptime% per machine */}
                         {sectionData.machines.length > 0 && (
