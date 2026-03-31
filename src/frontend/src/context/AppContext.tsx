@@ -474,7 +474,10 @@ export function AppProvider({ children }: { children: ReactNode }) {
     () => {
       try {
         const r = localStorage.getItem(BREAKDOWN_KEY);
-        if (r) return { ...DEFAULT_BD_TARGETS, ...JSON.parse(r) };
+        if (r) {
+          const parsed = JSON.parse(r);
+          return Array.isArray(parsed) ? parsed : [];
+        }
       } catch {}
       return [];
     },
@@ -482,14 +485,20 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const [capaRecords, setCapaRecords] = useState<CAPARecord[]>(() => {
     try {
       const r = localStorage.getItem(CAPA_KEY);
-      if (r) return { ...DEFAULT_BD_TARGETS, ...JSON.parse(r) };
+      if (r) {
+        const parsed = JSON.parse(r);
+        return Array.isArray(parsed) ? parsed : [];
+      }
     } catch {}
     return [];
   });
   const [historyCards, setHistoryCards] = useState<HistoryCardEntry[]>(() => {
     try {
       const r = localStorage.getItem(HISTORY_KEY);
-      if (r) return { ...DEFAULT_BD_TARGETS, ...JSON.parse(r) };
+      if (r) {
+        const parsed = JSON.parse(r);
+        return Array.isArray(parsed) ? parsed : [];
+      }
     } catch {}
     return [];
   });
@@ -498,7 +507,10 @@ export function AppProvider({ children }: { children: ReactNode }) {
   >(() => {
     try {
       const r = localStorage.getItem(SECTION_HOURS_KEY);
-      if (r) return { ...DEFAULT_BD_TARGETS, ...JSON.parse(r) };
+      if (r) {
+        const parsed = JSON.parse(r);
+        return Array.isArray(parsed) ? parsed : [];
+      }
     } catch {}
     return DEFAULT_SECTION_HOURS;
   });
@@ -514,7 +526,10 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const [taskRecords, setTaskRecords] = useState<TaskRecord[]>(() => {
     try {
       const r = localStorage.getItem(TASKS_KEY);
-      if (r) return { ...DEFAULT_BD_TARGETS, ...JSON.parse(r) };
+      if (r) {
+        const parsed = JSON.parse(r);
+        return Array.isArray(parsed) ? parsed : [];
+      }
     } catch {}
     return [];
   });
@@ -528,7 +543,10 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const [kaizenRecords, setKaizenRecords] = useState<KaizenRecord[]>(() => {
     try {
       const r = localStorage.getItem(KAIZEN_KEY);
-      if (r) return { ...DEFAULT_BD_TARGETS, ...JSON.parse(r) };
+      if (r) {
+        const parsed = JSON.parse(r);
+        return Array.isArray(parsed) ? parsed : [];
+      }
     } catch {}
     return [];
   });
@@ -536,7 +554,10 @@ export function AppProvider({ children }: { children: ReactNode }) {
     () => {
       try {
         const r = localStorage.getItem(PREDICTIVE_PLANS_KEY);
-        if (r) return { ...DEFAULT_BD_TARGETS, ...JSON.parse(r) };
+        if (r) {
+          const parsed = JSON.parse(r);
+          return Array.isArray(parsed) ? parsed : [];
+        }
       } catch {}
       return [];
     },
@@ -546,7 +567,10 @@ export function AppProvider({ children }: { children: ReactNode }) {
   >(() => {
     try {
       const r = localStorage.getItem(PREDICTIVE_RECORDS_KEY);
-      if (r) return { ...DEFAULT_BD_TARGETS, ...JSON.parse(r) };
+      if (r) {
+        const parsed = JSON.parse(r);
+        return Array.isArray(parsed) ? parsed : [];
+      }
     } catch {}
     return [];
   });
@@ -555,14 +579,20 @@ export function AppProvider({ children }: { children: ReactNode }) {
   >(() => {
     try {
       const r = localStorage.getItem(ELECTRICITY_METERS_KEY);
-      if (r) return { ...DEFAULT_BD_TARGETS, ...JSON.parse(r) };
+      if (r) {
+        const parsed = JSON.parse(r);
+        return Array.isArray(parsed) ? parsed : [];
+      }
     } catch {}
     return [];
   });
   const [meterReadings, setMeterReadings] = useState<MeterReading[]>(() => {
     try {
       const r = localStorage.getItem(METER_READINGS_KEY);
-      if (r) return { ...DEFAULT_BD_TARGETS, ...JSON.parse(r) };
+      if (r) {
+        const parsed = JSON.parse(r);
+        return Array.isArray(parsed) ? parsed : [];
+      }
     } catch {}
     return [];
   });
@@ -571,14 +601,20 @@ export function AppProvider({ children }: { children: ReactNode }) {
   >(() => {
     try {
       const r = localStorage.getItem(LOGBOOK_ITEMS_KEY);
-      if (r) return { ...DEFAULT_BD_TARGETS, ...JSON.parse(r) };
+      if (r) {
+        const parsed = JSON.parse(r);
+        return Array.isArray(parsed) ? parsed : [];
+      }
     } catch {}
     return [];
   });
   const [logbookEntries, setLogbookEntries] = useState<LogbookEntry[]>(() => {
     try {
       const r = localStorage.getItem(LOGBOOK_ENTRIES_KEY);
-      if (r) return { ...DEFAULT_BD_TARGETS, ...JSON.parse(r) };
+      if (r) {
+        const parsed = JSON.parse(r);
+        return Array.isArray(parsed) ? parsed : [];
+      }
     } catch {}
     return [];
   });

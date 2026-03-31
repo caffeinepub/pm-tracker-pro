@@ -1,6 +1,7 @@
 import { Toaster } from "@/components/ui/sonner";
 import React, { type ReactNode } from "react";
 import BottomNav from "./components/BottomNav";
+import DesktopNav from "./components/DesktopNav";
 import { AppProvider, useApp } from "./context/AppContext";
 import AdminPage from "./pages/AdminPage";
 import AnalysisPage from "./pages/AnalysisPage";
@@ -338,10 +339,15 @@ function AppRouter() {
 
 function AppWithNav() {
   const { currentPage } = useApp();
+  const showNav = currentPage !== "login";
   return (
     <div className="min-h-screen bg-background text-foreground dark">
-      <AppRouter />
-      {currentPage !== "login" && <BottomNav />}
+      {showNav && <DesktopNav />}
+      {/* Top padding on desktop to clear the fixed nav bar (52px) */}
+      <div className={showNav ? "md:pt-[52px]" : ""}>
+        <AppRouter />
+      </div>
+      {showNav && <BottomNav />}
       <Toaster position="top-right" richColors />
     </div>
   );
