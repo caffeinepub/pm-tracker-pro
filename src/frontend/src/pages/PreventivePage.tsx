@@ -124,26 +124,6 @@ export default function PreventivePage() {
   const currentMonth = new Date().getMonth() + 1;
   const currentYear = new Date().getFullYear();
 
-  if (user?.role !== "admin") {
-    return (
-      <div
-        className="min-h-screen flex items-center justify-center"
-        style={{ background: "oklch(0.165 0.022 252)" }}
-      >
-        <div className="text-center">
-          <AlertTriangle
-            className="w-12 h-12 mx-auto mb-4"
-            style={{ color: "oklch(0.63 0.22 27)" }}
-          />
-          <p className="text-lg font-semibold">Access Denied</p>
-          <Button className="mt-4" onClick={() => navigate("dashboard")}>
-            Back to Dashboard
-          </Button>
-        </div>
-      </div>
-    );
-  }
-
   function openCellEdit(machineId: string, month: number) {
     const plan =
       pmPlans.find(
@@ -323,13 +303,18 @@ export default function PreventivePage() {
         </header>
 
         <main className="flex-1 max-w-7xl mx-auto px-4 py-6 w-full pb-20 md:pb-6">
-          <Tabs defaultValue="machines" data-ocid="preventive.panel">
+          <Tabs
+            defaultValue={user?.role === "admin" ? "machines" : "records"}
+            data-ocid="preventive.panel"
+          >
             <TabsList
               className="mb-6 flex flex-wrap gap-1 h-auto p-1 w-full"
               style={{ background: "oklch(0.22 0.022 252)" }}
             >
               {[
-                { value: "machines", icon: Database, label: "Machines" },
+                ...(user?.role === "admin"
+                  ? [{ value: "machines", icon: Database, label: "Machines" }]
+                  : []),
                 {
                   value: "checklists",
                   icon: ClipboardList,
@@ -749,26 +734,28 @@ export default function PreventivePage() {
                               >
                                 {editing.items.length} items
                               </span>
-                              <Button
-                                data-ocid={`checklists.save_button.${tIdx + 1}`}
-                                size="sm"
-                                onClick={() => {
-                                  updateChecklistTemplates([editing]);
-                                  setEditingTemplates((prev) => {
-                                    const next = { ...prev };
-                                    delete next[tmpl.id];
-                                    return next;
-                                  });
-                                  toast.success("Checklist saved");
-                                }}
-                                className="h-7 text-xs px-3"
-                                style={{
-                                  background: "oklch(0.55 0.188 145)",
-                                  color: "white",
-                                }}
-                              >
-                                Save
-                              </Button>
+                              {user?.role === "admin" && (
+                                <Button
+                                  data-ocid={`checklists.save_button.${tIdx + 1}`}
+                                  size="sm"
+                                  onClick={() => {
+                                    updateChecklistTemplates([editing]);
+                                    setEditingTemplates((prev) => {
+                                      const next = { ...prev };
+                                      delete next[tmpl.id];
+                                      return next;
+                                    });
+                                    toast.success("Checklist saved");
+                                  }}
+                                  className="h-7 text-xs px-3"
+                                  style={{
+                                    background: "oklch(0.55 0.188 145)",
+                                    color: "white",
+                                  }}
+                                >
+                                  Save
+                                </Button>
+                              )}
                             </div>
                           </div>
                           <div className="space-y-2 mb-3">
@@ -1351,7 +1338,13 @@ export default function PreventivePage() {
                                     type="button"
                                     className="w-full min-h-[40px] flex flex-col items-center justify-center"
                                     onClick={() =>
+                                      user?.role === "admin" &&
                                       openCellEdit(machine.id, month)
+                                    }
+                                    style={
+                                      user?.role !== "admin"
+                                        ? { cursor: "default" }
+                                        : {}
                                     }
                                   >
                                     {plan ? (

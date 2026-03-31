@@ -71,6 +71,7 @@ export default function PredictivePage() {
   } = useApp();
 
   const [showPlanForm, setShowPlanForm] = useState(false);
+  const [activeTab, setActiveTab] = useState("plans");
   const [planForm, setPlanForm] = useState({ ...EMPTY_PLAN });
   const [editPlanId, setEditPlanId] = useState<string | null>(null);
   const importRef = useRef<HTMLInputElement>(null);
@@ -471,7 +472,7 @@ export default function PredictivePage() {
         </header>
 
         <main className="flex-1 max-w-7xl mx-auto px-4 py-6 w-full pb-24 md:pb-8">
-          <Tabs defaultValue="plans">
+          <Tabs value={activeTab} onValueChange={setActiveTab}>
             <TabsList
               style={{
                 background: "oklch(0.22 0.022 252)",
@@ -631,6 +632,26 @@ export default function PredictivePage() {
                               {p.notes}
                             </TableCell>
                             <TableCell>
+                              {user?.role !== "admin" && (
+                                <Button
+                                  size="sm"
+                                  variant="outline"
+                                  onClick={() => {
+                                    setSelectedPlanId(p.id);
+                                    setActiveTab("readings");
+                                  }}
+                                  data-ocid={`predictive.submit_button.${idx + 1}`}
+                                  style={{
+                                    fontSize: "11px",
+                                    borderColor: "oklch(0.34 0.030 252)",
+                                    color: "oklch(0.68 0.010 260)",
+                                    height: "26px",
+                                    padding: "0 8px",
+                                  }}
+                                >
+                                  Submit Reading
+                                </Button>
+                              )}
                               {user?.role === "admin" && (
                                 <div className="flex gap-2">
                                   <Button

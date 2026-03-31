@@ -76,13 +76,13 @@ const ITEM_CATEGORIES = [
 ];
 
 const CATEGORY_COLORS: Record<string, string> = {
-  Safety: "oklch(0.75 0.17 27)",
-  Quality: "oklch(0.72 0.13 145)",
-  Housekeeping: "oklch(0.75 0.16 195)",
-  Equipment: "oklch(0.72 0.15 232)",
-  Production: "oklch(0.78 0.18 55)",
-  Maintenance: "oklch(0.68 0.14 290)",
-  Other: "oklch(0.62 0.010 260)",
+  Safety: "oklch(0.85 0.17 27)",
+  Quality: "oklch(0.82 0.13 145)",
+  Housekeeping: "oklch(0.84 0.14 195)",
+  Equipment: "oklch(0.82 0.15 232)",
+  Production: "oklch(0.88 0.16 55)",
+  Maintenance: "oklch(0.80 0.14 290)",
+  Other: "oklch(0.75 0.010 260)",
 };
 
 const ACTIVITY_STATUSES = ["Completed", "In Progress", "Pending"];

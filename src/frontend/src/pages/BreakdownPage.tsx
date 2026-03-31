@@ -1108,7 +1108,7 @@ export default function BreakdownPage() {
                           {r.faultType} — {r.problemDescription}
                         </div>
                         {r.isInCapa && (
-                          <span className="text-yellow-400">⚠️ In CAPA</span>
+                          <span className="text-orange-400">⚠️ In CAPA</span>
                         )}
                         {r.isInHistory && (
                           <span className="ml-2 text-blue-400">
