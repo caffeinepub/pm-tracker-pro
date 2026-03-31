@@ -161,9 +161,14 @@ export interface KaizenRecord {
   submittedBy: string;
   submittedByUsername: string;
   submittedAt: number;
-  status: "Open" | "Closed";
+  status: "Pending Approval" | "Approved" | "Rejected" | "Closed";
   closedAt?: number;
   closedRemarks?: string;
+  spares?: Array<{ name: string; partNo: string; qty: string; unit: string }>;
+  approvedAt?: number;
+  rejectedAt?: number;
+  rejectionReason?: string;
+  adminRemarks?: string;
 }
 
 export interface PredictivePlan {
@@ -187,16 +192,16 @@ export interface PredictiveRecord {
   remarks: string;
   operatorName: string;
   operatorUsername: string;
-  status: "pending-approval" | "completed" | "rejected";
   submittedAt: number;
+  status: "pending-approval" | "completed" | "rejected";
 }
 
 export interface ElectricityMeter {
   id: string;
   name: string;
-  location: string;
-  multiplier: number;
   unit: string;
+  multiplier: number;
+  location: string;
   createdAt: number;
 }
 
@@ -234,6 +239,12 @@ export interface LogbookEntry {
   }>;
   generalRemarks: string;
   submittedAt: number;
+  activities?: Array<{
+    description: string;
+    timeSpent: string;
+    status: string;
+    remarks: string;
+  }>;
 }
 
 const DEFAULT_BD_TARGETS: BDTargets = {
@@ -746,12 +757,12 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
   const addPMPlan = useCallback((p: PMPlan) => {
     setPmPlans((prev) => {
-      const idx = prev.findIndex(
+      const exists = prev.findIndex(
         (x) => x.machineId === p.machineId && x.month === p.month,
       );
-      if (idx >= 0) {
+      if (exists >= 0) {
         const updated = [...prev];
-        updated[idx] = { ...updated[idx], ...p };
+        updated[exists] = p;
         return updated;
       }
       return [...prev, p];
@@ -779,10 +790,10 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
   const addChecklistTemplate = useCallback((t: ChecklistTemplate) => {
     setChecklistTemplates((prev) => {
-      const exists = prev.findIndex((x) => x.id === t.id);
-      if (exists >= 0) {
+      const idx = prev.findIndex((x) => x.id === t.id);
+      if (idx >= 0) {
         const updated = [...prev];
-        updated[exists] = t;
+        updated[idx] = t;
         return updated;
       }
       return [...prev, t];
@@ -791,15 +802,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
   const updateChecklistTemplates = useCallback(
     (templates: ChecklistTemplate[]) => {
-      setChecklistTemplates((prev) => {
-        let result = [...prev];
-        for (const t of templates) {
-          const idx = result.findIndex((x) => x.id === t.id);
-          if (idx >= 0) result[idx] = t;
-          else result = [...result, t];
-        }
-        return result;
-      });
+      setChecklistTemplates(templates);
     },
     [],
   );
@@ -1181,7 +1184,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
     setNotifications((prev) => [
       {
         id: `notif-kaizen-${Date.now()}`,
-        message: `💡 New Kaizen submitted by ${k.submittedBy}: "${k.title}"`,
+        message: `💡 New Kaizen submitted by ${k.submittedBy}: "${k.title}" — awaiting approval.`,
         timestamp: Date.now(),
         read: false,
       },

@@ -24,7 +24,15 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { Textarea } from "@/components/ui/textarea";
-import { BookOpen, FileSpreadsheet, LogOut, Plus, Trash2 } from "lucide-react";
+import {
+  BookOpen,
+  FileSpreadsheet,
+  ListTodo,
+  LogOut,
+  Plus,
+  Trash2,
+  X,
+} from "lucide-react";
 import { motion } from "motion/react";
 import { useMemo, useState } from "react";
 import { toast } from "sonner";
@@ -34,6 +42,22 @@ import type { LogbookCheckItem, LogbookEntry } from "../context/AppContext";
 import { useApp } from "../context/AppContext";
 
 const XLSX = (window as any).XLSX;
+
+type ActivityRow = {
+  id: string;
+  description: string;
+  timeSpent: string;
+  status: string;
+  remarks: string;
+};
+
+const EMPTY_ACTIVITY: ActivityRow = {
+  id: "",
+  description: "",
+  timeSpent: "",
+  status: "Completed",
+  remarks: "",
+};
 
 export default function OperatorLogbookPage() {
   const {
@@ -64,6 +88,9 @@ export default function OperatorLogbookPage() {
     >
   >({});
   const [generalRemarks, setGeneralRemarks] = useState("");
+
+  // Other Work Activities
+  const [activities, setActivities] = useState<ActivityRow[]>([]);
 
   // View entry dialog
   const [viewEntry, setViewEntry] = useState<LogbookEntry | null>(null);
@@ -127,12 +154,34 @@ export default function OperatorLogbookPage() {
     setEditItemId(null);
   }
 
+  function handleAddActivity() {
+    setActivities((prev) => [
+      ...prev,
+      { ...EMPTY_ACTIVITY, id: `act-${Date.now()}-${prev.length}` },
+    ]);
+  }
+
+  function handleRemoveActivity(idx: number) {
+    setActivities((prev) => prev.filter((_, i) => i !== idx));
+  }
+
+  function handleActivityChange(
+    idx: number,
+    field: keyof ActivityRow,
+    val: string,
+  ) {
+    setActivities((prev) =>
+      prev.map((a, i) => (i === idx ? { ...a, [field]: val } : a)),
+    );
+  }
+
   function handleSubmitEntry(e: React.FormEvent) {
     e.preventDefault();
-    if (logbookCheckItems.length === 0) {
-      toast.error("Admin must add check items first");
+    if (logbookCheckItems.length === 0 && activities.length === 0) {
+      toast.error("Add checksheet items or work activities first");
       return;
     }
+    const validActivities = activities.filter((a) => a.description.trim());
     const entry: LogbookEntry = {
       id: `lb-entry-${Date.now()}`,
       date: entryDate,
@@ -150,11 +199,13 @@ export default function OperatorLogbookPage() {
       }),
       generalRemarks,
       submittedAt: Date.now(),
+      activities: validActivities.length > 0 ? validActivities : undefined,
     };
     submitLogbookEntry(entry);
     toast.success("Logbook entry submitted!");
     setEntryItems({});
     setGeneralRemarks("");
+    setActivities([]);
   }
 
   function handleExport() {
@@ -162,15 +213,34 @@ export default function OperatorLogbookPage() {
       toast.error("XLSX not available");
       return;
     }
-    const data = sortedEntries.flatMap((e) =>
+    // Checksheet rows
+    const checkRows = sortedEntries.flatMap((e) =>
       e.items.map((item) => ({
         Date: e.date,
         Operator: e.operatorName,
+        Type: "Checksheet",
         Description: item.description,
         Status: item.status,
         Remark: item.remark,
+        "Time Spent (hrs)": "",
         "General Remarks": e.generalRemarks,
       })),
+    );
+    // Activity rows
+    const activityRows = sortedEntries.flatMap((e) =>
+      (e.activities ?? []).map((act) => ({
+        Date: e.date,
+        Operator: e.operatorName,
+        Type: "Work Activity",
+        Description: act.description,
+        Status: act.status,
+        Remark: act.remarks,
+        "Time Spent (hrs)": act.timeSpent,
+        "General Remarks": e.generalRemarks,
+      })),
+    );
+    const data = [...checkRows, ...activityRows].sort((a, b) =>
+      b.Date.localeCompare(a.Date),
     );
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(data), "Logbook");
@@ -185,6 +255,7 @@ export default function OperatorLogbookPage() {
     borderColor: "oklch(0.34 0.030 252)",
     color: "oklch(0.88 0.010 260)",
   };
+
   const navItems = [
     { label: "Dashboard", page: "dashboard" as const },
     { label: "Preventive Maintenance", page: "preventive" as const },
@@ -462,6 +533,7 @@ export default function OperatorLogbookPage() {
                 </div>
               </div>
 
+              {/* Checksheet items */}
               {logbookCheckItems.length === 0 ? (
                 <p
                   className="text-sm py-4"
@@ -555,7 +627,9 @@ export default function OperatorLogbookPage() {
                           <Input
                             value={state.remark}
                             onChange={(e) =>
-                              setItemState(item.id, { remark: e.target.value })
+                              setItemState(item.id, {
+                                remark: e.target.value,
+                              })
                             }
                             placeholder="Remark (optional)"
                             data-ocid="logbook.input"
@@ -595,6 +669,188 @@ export default function OperatorLogbookPage() {
                 </div>
               )}
 
+              {/* ===== Other Work Activities ===== */}
+              <div
+                className="rounded-lg p-4 space-y-3"
+                style={{
+                  background: "oklch(0.19 0.020 255)",
+                  border: "1px solid oklch(0.34 0.030 252)",
+                }}
+              >
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <ListTodo
+                      className="w-4 h-4"
+                      style={{ color: "oklch(0.65 0.150 232)" }}
+                    />
+                    <Label
+                      className="text-xs font-semibold"
+                      style={{ color: "oklch(0.65 0.150 232)" }}
+                    >
+                      Other Work Activities
+                    </Label>
+                  </div>
+                  <Button
+                    type="button"
+                    size="sm"
+                    onClick={handleAddActivity}
+                    data-ocid="logbook.secondary_button"
+                    style={{
+                      fontSize: "11px",
+                      background: "oklch(0.50 0.065 232 / 0.20)",
+                      color: "oklch(0.65 0.150 232)",
+                      border: "1px solid oklch(0.50 0.065 232 / 0.4)",
+                      height: "26px",
+                      padding: "0 10px",
+                    }}
+                  >
+                    <Plus className="w-3 h-3 mr-1" /> Add Activity
+                  </Button>
+                </div>
+
+                {activities.length === 0 ? (
+                  <p
+                    className="text-xs text-center py-2"
+                    style={{ color: "oklch(0.50 0.010 260)" }}
+                  >
+                    No activities added. Click "Add Activity" to record other
+                    work done.
+                  </p>
+                ) : (
+                  <div className="space-y-3">
+                    {/* Column headers */}
+                    <div className="hidden sm:grid grid-cols-[1fr_80px_120px_1fr_32px] gap-2">
+                      {[
+                        "Activity Description",
+                        "Time (hrs)",
+                        "Status",
+                        "Remarks",
+                        "",
+                      ].map((h) => (
+                        <span
+                          key={h}
+                          className="text-xs"
+                          style={{ color: "oklch(0.55 0.010 260)" }}
+                        >
+                          {h}
+                        </span>
+                      ))}
+                    </div>
+                    {activities.map((act, idx) => (
+                      <div
+                        key={act.id || `activity-${idx}`}
+                        className="grid grid-cols-1 sm:grid-cols-[1fr_80px_120px_1fr_32px] gap-2 items-start"
+                      >
+                        <Input
+                          value={act.description}
+                          onChange={(e) =>
+                            handleActivityChange(
+                              idx,
+                              "description",
+                              e.target.value,
+                            )
+                          }
+                          placeholder="Describe work done..."
+                          data-ocid="logbook.input"
+                          style={{
+                            ...inputStyle,
+                            fontSize: "12px",
+                            height: "32px",
+                          }}
+                        />
+                        <Input
+                          value={act.timeSpent}
+                          onChange={(e) =>
+                            handleActivityChange(
+                              idx,
+                              "timeSpent",
+                              e.target.value,
+                            )
+                          }
+                          type="number"
+                          placeholder="hrs"
+                          data-ocid="logbook.input"
+                          style={{
+                            ...inputStyle,
+                            fontSize: "12px",
+                            height: "32px",
+                          }}
+                        />
+                        <Select
+                          value={act.status}
+                          onValueChange={(v) =>
+                            handleActivityChange(idx, "status", v)
+                          }
+                        >
+                          <SelectTrigger
+                            style={{
+                              background: "oklch(0.22 0.022 252)",
+                              borderColor: "oklch(0.34 0.030 252)",
+                              color: "oklch(0.88 0.010 260)",
+                              fontSize: "12px",
+                              height: "32px",
+                            }}
+                            data-ocid="logbook.select"
+                          >
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent
+                            style={{
+                              background: "oklch(0.22 0.022 252)",
+                              borderColor: "oklch(0.34 0.030 252)",
+                            }}
+                          >
+                            <SelectItem
+                              value="Completed"
+                              style={{ color: "oklch(0.75 0.13 145)" }}
+                            >
+                              Completed
+                            </SelectItem>
+                            <SelectItem
+                              value="In Progress"
+                              style={{ color: "oklch(0.80 0.180 55)" }}
+                            >
+                              In Progress
+                            </SelectItem>
+                            <SelectItem
+                              value="Pending"
+                              style={{ color: "oklch(0.78 0.17 27)" }}
+                            >
+                              Pending
+                            </SelectItem>
+                          </SelectContent>
+                        </Select>
+                        <Input
+                          value={act.remarks}
+                          onChange={(e) =>
+                            handleActivityChange(idx, "remarks", e.target.value)
+                          }
+                          placeholder="Remarks (optional)"
+                          data-ocid="logbook.input"
+                          style={{
+                            ...inputStyle,
+                            fontSize: "12px",
+                            height: "32px",
+                          }}
+                        />
+                        <button
+                          type="button"
+                          onClick={() => handleRemoveActivity(idx)}
+                          className="w-7 h-7 flex items-center justify-center rounded"
+                          style={{
+                            color: "oklch(0.72 0.170 25)",
+                            background: "oklch(0.40 0.150 25 / 0.10)",
+                          }}
+                        >
+                          <X className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              {/* General Remarks */}
               <div className="space-y-1.5">
                 <Label
                   className="text-xs"
@@ -611,6 +867,7 @@ export default function OperatorLogbookPage() {
                   style={{ ...inputStyle }}
                 />
               </div>
+
               <Button
                 type="submit"
                 data-ocid="logbook.submit_button"
@@ -670,6 +927,7 @@ export default function OperatorLogbookPage() {
                         "Date",
                         "Operator",
                         "OK Items",
+                        "Activities",
                         "General Remarks",
                         "Action",
                       ].map((h) => (
@@ -688,10 +946,11 @@ export default function OperatorLogbookPage() {
                         (i) => i.status === "OK",
                       ).length;
                       const total = entry.items.length;
+                      const actCount = entry.activities?.length ?? 0;
                       return (
                         <TableRow
                           key={entry.id}
-                          data-ocid={`logbook.row.${idx + 1}`}
+                          data-ocid={`logbook.item.${idx + 1}`}
                           style={{ borderColor: "oklch(0.28 0.025 252)" }}
                         >
                           <TableCell
@@ -710,11 +969,11 @@ export default function OperatorLogbookPage() {
                             <Badge
                               style={{
                                 background:
-                                  okCount === total
+                                  total === 0 || okCount === total
                                     ? "oklch(0.30 0.090 145 / 0.25)"
                                     : "oklch(0.35 0.090 55 / 0.25)",
                                 color:
-                                  okCount === total
+                                  total === 0 || okCount === total
                                     ? "oklch(0.75 0.130 145)"
                                     : "oklch(0.80 0.180 55)",
                                 fontWeight: "bold",
@@ -724,8 +983,28 @@ export default function OperatorLogbookPage() {
                               {okCount}/{total}
                             </Badge>
                           </TableCell>
+                          <TableCell>
+                            {actCount > 0 ? (
+                              <Badge
+                                style={{
+                                  background: "oklch(0.50 0.065 232 / 0.15)",
+                                  color: "oklch(0.65 0.150 232)",
+                                  fontSize: "11px",
+                                }}
+                              >
+                                {actCount} activities
+                              </Badge>
+                            ) : (
+                              <span
+                                className="text-xs"
+                                style={{ color: "oklch(0.45 0.010 260)" }}
+                              >
+                                —
+                              </span>
+                            )}
+                          </TableCell>
                           <TableCell
-                            className="text-xs max-w-[160px] truncate"
+                            className="text-xs max-w-[140px] truncate"
                             style={{ color: "oklch(0.55 0.010 260)" }}
                           >
                             {entry.generalRemarks || "-"}
@@ -783,7 +1062,10 @@ export default function OperatorLogbookPage() {
                 <Input
                   value={itemForm.description}
                   onChange={(e) =>
-                    setItemForm((f) => ({ ...f, description: e.target.value }))
+                    setItemForm((f) => ({
+                      ...f,
+                      description: e.target.value,
+                    }))
                   }
                   data-ocid="logbook.input"
                   style={{ ...inputStyle }}
@@ -892,62 +1174,174 @@ export default function OperatorLogbookPage() {
                     </p>
                   </div>
                 </div>
-                <div className="space-y-2">
-                  {viewEntry.items.map((item) => (
-                    <div
-                      key={item.checkItemId}
-                      className="rounded p-3"
-                      style={{
-                        background: "oklch(0.19 0.020 255)",
-                        border: "1px solid oklch(0.28 0.025 252)",
-                      }}
+
+                {/* Checksheet items */}
+                {viewEntry.items.length > 0 && (
+                  <div>
+                    <p
+                      className="text-xs font-semibold mb-2"
+                      style={{ color: "oklch(0.65 0.150 232)" }}
                     >
-                      <div className="flex items-center justify-between mb-1">
-                        <p
-                          className="text-sm"
-                          style={{ color: "oklch(0.88 0.010 260)" }}
-                        >
-                          {item.description}
-                        </p>
-                        <Badge
+                      Checksheet Items
+                    </p>
+                    <div className="space-y-2">
+                      {viewEntry.items.map((item) => (
+                        <div
+                          key={item.checkItemId}
+                          className="rounded p-3"
                           style={{
-                            background:
-                              item.status === "OK"
-                                ? "oklch(0.30 0.090 145 / 0.25)"
-                                : item.status === "Not OK"
-                                  ? "oklch(0.35 0.120 27 / 0.25)"
-                                  : "oklch(0.28 0.025 252)",
-                            color:
-                              item.status === "OK"
-                                ? "oklch(0.75 0.130 145)"
-                                : item.status === "Not OK"
-                                  ? "oklch(0.78 0.17 27)"
-                                  : "oklch(0.68 0.010 260)",
-                            fontWeight: "bold",
-                            fontSize: "11px",
+                            background: "oklch(0.19 0.020 255)",
+                            border: "1px solid oklch(0.28 0.025 252)",
                           }}
                         >
-                          {item.status}
-                        </Badge>
-                      </div>
-                      {item.remark && (
-                        <p
-                          className="text-xs"
-                          style={{ color: "oklch(0.55 0.010 260)" }}
-                        >
-                          Remark: {item.remark}
-                        </p>
-                      )}
-                      {item.photoDataUrl && (
-                        <img
-                          src={item.photoDataUrl}
-                          alt=""
-                          className="mt-2 rounded max-h-24 object-cover"
-                        />
-                      )}
+                          <div className="flex items-center justify-between mb-1">
+                            <p
+                              className="text-sm"
+                              style={{ color: "oklch(0.88 0.010 260)" }}
+                            >
+                              {item.description}
+                            </p>
+                            <Badge
+                              style={{
+                                background:
+                                  item.status === "OK"
+                                    ? "oklch(0.30 0.090 145 / 0.25)"
+                                    : item.status === "Not OK"
+                                      ? "oklch(0.35 0.120 27 / 0.25)"
+                                      : "oklch(0.28 0.025 252)",
+                                color:
+                                  item.status === "OK"
+                                    ? "oklch(0.75 0.130 145)"
+                                    : item.status === "Not OK"
+                                      ? "oklch(0.78 0.17 27)"
+                                      : "oklch(0.68 0.010 260)",
+                                fontWeight: "bold",
+                                fontSize: "11px",
+                              }}
+                            >
+                              {item.status}
+                            </Badge>
+                          </div>
+                          {item.remark && (
+                            <p
+                              className="text-xs"
+                              style={{ color: "oklch(0.55 0.010 260)" }}
+                            >
+                              Remark: {item.remark}
+                            </p>
+                          )}
+                          {item.photoDataUrl && (
+                            <img
+                              src={item.photoDataUrl}
+                              alt=""
+                              className="mt-2 rounded max-h-24 object-cover"
+                            />
+                          )}
+                        </div>
+                      ))}
                     </div>
-                  ))}
-                </div>
+                  </div>
+                )}
+
+                {/* Other Work Activities */}
+                {viewEntry.activities && viewEntry.activities.length > 0 && (
+                  <div>
+                    <div className="flex items-center gap-2 mb-2">
+                      <ListTodo
+                        className="w-3.5 h-3.5"
+                        style={{ color: "oklch(0.65 0.150 232)" }}
+                      />
+                      <p
+                        className="text-xs font-semibold"
+                        style={{ color: "oklch(0.65 0.150 232)" }}
+                      >
+                        Other Work Activities
+                      </p>
+                    </div>
+                    <div
+                      className="rounded overflow-hidden"
+                      style={{
+                        border: "1px solid oklch(0.34 0.030 252)",
+                      }}
+                    >
+                      <table className="w-full text-xs">
+                        <thead
+                          style={{
+                            background: "oklch(0.22 0.022 252)",
+                          }}
+                        >
+                          <tr>
+                            {[
+                              "Description",
+                              "Time (hrs)",
+                              "Status",
+                              "Remarks",
+                            ].map((h) => (
+                              <th
+                                key={h}
+                                className="text-left px-3 py-2"
+                                style={{ color: "oklch(0.68 0.010 260)" }}
+                              >
+                                {h}
+                              </th>
+                            ))}
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {viewEntry.activities.map((act, i) => (
+                            <tr
+                              key={act.description + String(i)}
+                              style={{
+                                borderTop: "1px solid oklch(0.28 0.025 252)",
+                              }}
+                            >
+                              <td
+                                className="px-3 py-2"
+                                style={{ color: "oklch(0.88 0.010 260)" }}
+                              >
+                                {act.description}
+                              </td>
+                              <td
+                                className="px-3 py-2"
+                                style={{ color: "oklch(0.68 0.010 260)" }}
+                              >
+                                {act.timeSpent || "-"} hrs
+                              </td>
+                              <td className="px-3 py-2">
+                                <Badge
+                                  style={{
+                                    background:
+                                      act.status === "Completed"
+                                        ? "oklch(0.30 0.090 145 / 0.25)"
+                                        : act.status === "In Progress"
+                                          ? "oklch(0.35 0.090 55 / 0.25)"
+                                          : "oklch(0.35 0.120 25 / 0.25)",
+                                    color:
+                                      act.status === "Completed"
+                                        ? "oklch(0.75 0.130 145)"
+                                        : act.status === "In Progress"
+                                          ? "oklch(0.80 0.180 55)"
+                                          : "oklch(0.78 0.17 27)",
+                                    fontSize: "10px",
+                                    fontWeight: "bold",
+                                  }}
+                                >
+                                  {act.status}
+                                </Badge>
+                              </td>
+                              <td
+                                className="px-3 py-2"
+                                style={{ color: "oklch(0.55 0.010 260)" }}
+                              >
+                                {act.remarks || "-"}
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                )}
               </div>
             )}
           </DialogContent>

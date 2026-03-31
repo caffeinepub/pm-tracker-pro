@@ -2,60 +2,50 @@
 
 ## Current State
 
-Full-featured industrial maintenance app with:
-- Dashboard (4 sections: Preventive, Breakdown Analysis, Planner, Quick Actions)
-- PreventivePage (PM plans, checklists, approvals)
-- BreakdownPage + BreakdownPanelPage (slips, approvals, CAPA, history)
-- AnalysisPage (section-wise BD%, MTTR, MTBF, Uptime + Overall Plant tab)
-- TaskListPage (planner)
-- AppContext with state for machines, breakdowns, CAPA, history, tasks, bdTargets, sectionHoursConfigs
-- Routing via `currentPage` in AppContext; pages: login, dashboard, checklist, admin, preventive, breakdown-panel, analysis, breakdown, capa, history, task-list
+- KaizenPage.tsx: Kaizen submission form with title, category, machine/area, before/after photos, problem/improvement description. Status is 'Open' or 'Closed'. No spares used field. No admin approval workflow — only admin can 'Close'. PDF slip shows data but no embedded photos. Print uses window.print().
+- BDTargets interface already has section keys (Powder Coating, Machine Shop, Utility, Overall). AnalysisPage already reads `bdTargets[section]` for graph dashed lines, but there is NO UI in the section tabs for admin to enter/save section-level targets. Only 'Overall Plant' has a target entry form.
+- OperatorLogbookPage.tsx: Has checksheet with admin-defined items + general remarks field. No separate free-form activity log section where operator can write what other work they did that day.
 
 ## Requested Changes (Diff)
 
 ### Add
-- **Item 1**: Overall plant available hours = `Math.max` of all sections' available working hours (not sum)
-- **Item 2**: Future months in all graphs render blank (null value, not 0) — only months <= current month have data
-- **Item 3**: Per-section KPI target editing UI in each section tab (like existing Overall target form) — uses same `bdTargets` state keys (Powder Coating, Machine Shop, Utility already exist)
-- **Item 4**: Dashboard Breakdown Analysis section — replace section-wise cards + 4 section charts with overall plant KPI cards (BD%, MTTR, MTBF, Uptime%, BD Count, BD Hours) and a single BD% monthly trend chart
-- **Item 5**: Breakdown slip form — add photo upload input (file input accept="image/*"), read as base64, store `photoDataUrl` on `BreakdownRecord`
-- **Item 6+7+8**: New `KaizenPage.tsx` — operators and admin post kaizens with before/after photos; list view; Excel export of all records; per-kaizen printable slip (window.print); Kaizen quick action button on dashboard
-- **Item 9**: Rename "PM" label to "Preventive Maintenance" everywhere (nav labels, page titles, bottom nav) — routing key stays "preventive"
-- **Item 10**: New `PredictivePage.tsx` — predictive maintenance panel similar to PM; admin creates predictive schedules per machine with checklists that include reading fields (vibration, temperature, oil level, pressure); operators complete and submit; admin approves; export to Excel
-- **Item 11**: Unplanned maintenance ratio in Overall Plant analysis — formula: breakdown count in month / (preventive PM planned in month + predictive planned in month); shown as new KPI card and graph
-- **Item 12**: New `ElectricityPage.tsx` — admin defines meters (name, location, multiplier, unit); operators/admin enter readings (date, meter, start reading, end reading); consumption = (end-start) × multiplier; monthly trend chart; Excel export
-- **Item 13**: New `OperatorLogbookPage.tsx` — admin defines logbook checksheet items (description, category); operators fill daily logbook (select date, for each checksheet item: status, remark, photo); admin views all operators' logbooks; Excel export of logbook records
+- **Kaizen: Spares Used section** in the submission form. A dynamic table where operator can add rows: Spare Name, Part No., Quantity, Unit. Add/remove row buttons.
+- **Kaizen: Approval workflow** — on submission, status becomes 'Pending Approval'. Admin sees kaizen records in full, can approve (status → 'Approved'), reject (status → 'Rejected'), or close (status → 'Closed'). Add approval action buttons in admin view. Operator can see their own submissions with status badges.
+- **Kaizen: Proper PDF slip** — printable slip with all fields: ID, title, category, machine/area, date, submitted by, status, problem description, improvement description, spares used table, before photo (embedded as image), after photo (embedded as image). Use a print-specific CSS class or hidden print div that formats nicely like a formal document.
+- **Analysis: Section KPI Targets** — in each section tab (Powder Coating, Machine Shop, Utility), add an admin-only 'KPI Targets' input card identical to the Overall Plant targets card: 4 inputs (BD%, MTTR, MTBF, Uptime%) with Save button. Uses `updateBDTargets` with the section key. The `bdTargets[section]` is already wired to the graphs, just needs the entry UI.
+- **Operator Logbook: Free-form Activity Log section** — below the checksheet items in the daily entry form, add a new 'Other Work Activities' section where operator can add multiple free-form rows: Activity Description (text), Time Spent (number, hrs), Status (dropdown: Completed/In Progress/Pending), Remarks (text). These are saved as part of the LogbookEntry. Show them in the view-entry dialog and Excel export.
 
 ### Modify
-- `AppContext.tsx`: Add interfaces + state for KaizenRecord, PredictiveRecord, PredictivePlan, ElectricityMeter, MeterReading, LogbookCheckItem, LogbookEntry; add page names; add CRUD methods; add `photoDataUrl?: string` to BreakdownRecord
-- `App.tsx`: Add routes for kaizen, predictive, electricity, logbook
-- `BottomNav.tsx`: Add navigation for new panels (kaizen, predictive, electricity, logbook)
-- `DashboardPage.tsx`: Replace BD Analysis section content with overall plant data; add Kaizen quick action button
-- `AnalysisPage.tsx`: Fix available hours for overall (use max), blank future months, add section target UIs, add unplanned maintenance ratio
-- `BreakdownPage.tsx`: Add photo upload to breakdown form
-- All nav bars across all pages: Update "PM" to "Preventive Maintenance"
+- **KaizenRecord interface** in AppContext.tsx: Add `status: 'Pending Approval' | 'Approved' | 'Rejected' | 'Closed'` (replace old 'Open'|'Closed'). Add `spares?: Array<{name: string; partNo: string; qty: string; unit: string}>`. Add `approvedAt?: number`, `rejectedAt?: number`, `rejectionReason?: string`.
+- **LogbookEntry interface** in AppContext.tsx: Add `activities?: Array<{description: string; timeSpent: string; status: string; remarks: string}>`.
+- **KaizenPage.tsx**: Rework submission status from 'Open' to 'Pending Approval'. Add spares table UI in the form. Add admin approval/reject/close actions in the records table. Fix PDF slip to include photos as `<img>` in a print-styled hidden div. Add admin edit capability (open the form dialog pre-filled with a record's data, allow saving edits).
+- **OperatorLogbookPage.tsx**: Add activities state in entry form, save to LogbookEntry, show in view dialog, include in export.
 
 ### Remove
-- Section-wise KPI cards and 4 section-wise charts from Dashboard Breakdown Analysis section
+- Nothing removed.
 
 ## Implementation Plan
 
-1. **AppContext.tsx** — add all new types (KaizenRecord, PredictivePlan, PredictiveRecord, ElectricityMeter, MeterReading, LogbookCheckItem, LogbookEntry), add `photoDataUrl` to BreakdownRecord, add state + localStorage persistence, add page names, add CRUD methods to context value
+1. **AppContext.tsx**:
+   - Update `KaizenRecord.status` type to `'Pending Approval' | 'Approved' | 'Rejected' | 'Closed'`.
+   - Add `spares?: Array<{name: string; partNo: string; qty: string; unit: string}>` to KaizenRecord.
+   - Add `approvedAt?: number; rejectedAt?: number; rejectionReason?: string` to KaizenRecord.
+   - Add `activities?: Array<{description: string; timeSpent: string; status: string; remarks: string}>` to LogbookEntry.
+   - Update DEFAULT_BD_TARGETS to include reasonable defaults for all sections if not already.
 
-2. **App.tsx** — add imports and routes for KaizenPage, PredictivePage, ElectricityPage, OperatorLogbookPage
+2. **KaizenPage.tsx**:
+   - Add spares state array (rows) in form state. UI: a table with Add Row / Remove Row buttons.
+   - Change initial status on submit to 'Pending Approval'.
+   - Admin sees all records. Add Approve button (status → 'Approved'), Reject button (status → 'Rejected', prompt for reason), Close button (status → 'Closed').
+   - Admin edit: clicking a record row (or an Edit button) opens the form pre-filled, saving updates the record.
+   - PDF slip: add a hidden `#kaizen-print-slip` div styled for print. Include all form data, spares table, and both photos embedded as `<img>` tags. On Print Slip click, populate this div with selected kaizen data and call `window.print()`. Add `@media print { body { display: none } #kaizen-print-slip { display: block } }` via inline style tag or existing CSS.
 
-3. **BottomNav.tsx** — add Kaizen, Predictive, Electricity, Logbook nav items (keep it readable — can group or use a compact layout)
+3. **AnalysisPage.tsx**:
+   - In the SECTIONS.map loop for each section tab, add a 'KPI Targets' card immediately after the 'Working Hours' card. Admin-only. 4 inputs: BD%, MTTR, MTBF, Uptime%. Save button calls `updateBDTargets({ [section]: { bdPct, mttr, mtbf, uptime } })`. Pre-populated from `bdTargets[section]`. Identical structure to the Overall Plant targets card.
 
-4. **AnalysisPage.tsx** — (a) fix `getOverallPlantMetrics` and `getOverallMonthlyData` to use max available hours; (b) add null for future months in monthly data functions; (c) add target editing form in each section tab; (d) add unplanned maintenance KPI and chart to Overall tab
-
-5. **DashboardPage.tsx** — (a) replace BD Analysis section with overall plant KPI cards + monthly BD% trend chart; (b) add Kaizen button to quick actions
-
-6. **BreakdownPage.tsx** — add photo file input to form, store base64 data URL in form state and record
-
-7. **KaizenPage.tsx** (new) — form: title, category, machine/area, problem description, improvement description, before photo, after photo, submitter; list with status/filter; Excel export; per-kaizen print slip
-
-8. **PredictivePage.tsx** (new) — admin creates predictive schedules (machine, frequency, schedule date, reading parameters); operator fills readings and submits; admin approves; export to Excel
-
-9. **ElectricityPage.tsx** (new) — meter management (admin), readings entry (operator/admin), consumption calculation, monthly chart, Excel export
-
-10. **OperatorLogbookPage.tsx** (new) — admin defines checksheet items; operator fills daily logbook; admin views all; Excel export
+4. **OperatorLogbookPage.tsx**:
+   - Add `activities` state array `Array<{description: string; timeSpent: string; status: string; remarks: string}>` to the entry form.
+   - UI section below checksheet: 'Other Work Activities' with Add Row / Remove Row buttons and inline inputs per row.
+   - On submit, save `activities` to the LogbookEntry.
+   - In view-entry dialog, show activities table.
+   - In export, add activities as separate rows or columns.
