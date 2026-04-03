@@ -772,40 +772,6 @@ export default function AdminPage() {
                 Admin{" "}
                 <span style={{ color: "oklch(0.80 0.180 55)" }}>Panel</span>
               </span>
-              <nav className="hidden md:flex items-center gap-2 ml-4">
-                <button
-                  type="button"
-                  onClick={() => navigate("dashboard")}
-                  className="px-3 py-1.5 rounded-lg text-sm font-medium hover:bg-white/5"
-                  style={{ color: "oklch(0.68 0.010 260)" }}
-                >
-                  Dashboard
-                </button>
-                <button
-                  type="button"
-                  onClick={() => navigate("preventive")}
-                  className="px-3 py-1.5 rounded-lg text-sm font-medium hover:bg-white/5"
-                  style={{ color: "oklch(0.68 0.010 260)" }}
-                >
-                  PM
-                </button>
-                <button
-                  type="button"
-                  onClick={() => navigate("breakdown-panel")}
-                  className="px-3 py-1.5 rounded-lg text-sm font-medium hover:bg-white/5"
-                  style={{ color: "oklch(0.68 0.010 260)" }}
-                >
-                  Breakdown
-                </button>
-                <button
-                  type="button"
-                  onClick={() => navigate("analysis")}
-                  className="px-3 py-1.5 rounded-lg text-sm font-medium hover:bg-white/5"
-                  style={{ color: "oklch(0.68 0.010 260)" }}
-                >
-                  Analysis
-                </button>
-              </nav>
             </div>
             <div className="flex items-center gap-3">
               <NotificationBell />

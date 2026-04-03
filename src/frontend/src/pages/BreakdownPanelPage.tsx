@@ -394,40 +394,6 @@ export default function BreakdownPanelPage() {
                 Breakdown{" "}
                 <span style={{ color: "oklch(0.75 0.200 25)" }}>Panel</span>
               </span>
-              <nav className="hidden md:flex items-center gap-2 ml-6">
-                <button
-                  type="button"
-                  onClick={() => navigate("dashboard")}
-                  className="px-3 py-1.5 rounded-lg text-sm font-medium hover:bg-white/5"
-                  style={{ color: "oklch(0.68 0.010 260)" }}
-                >
-                  Dashboard
-                </button>
-                <button
-                  type="button"
-                  onClick={() => navigate("preventive")}
-                  className="px-3 py-1.5 rounded-lg text-sm font-medium hover:bg-white/5"
-                  style={{ color: "oklch(0.68 0.010 260)" }}
-                >
-                  PM
-                </button>
-                <button
-                  type="button"
-                  onClick={() => navigate("breakdown-panel")}
-                  className="px-3 py-1.5 rounded-lg text-sm font-medium hover:bg-white/5"
-                  style={{ color: "oklch(0.68 0.010 260)" }}
-                >
-                  Breakdown
-                </button>
-                <button
-                  type="button"
-                  onClick={() => navigate("analysis")}
-                  className="px-3 py-1.5 rounded-lg text-sm font-medium hover:bg-white/5"
-                  style={{ color: "oklch(0.68 0.010 260)" }}
-                >
-                  Analysis
-                </button>
-              </nav>
               {pendingBreakdowns.length > 0 && (
                 <Badge
                   style={{
