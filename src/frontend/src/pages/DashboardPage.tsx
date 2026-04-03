@@ -591,8 +591,156 @@ export default function DashboardPage() {
           ? ((avail - secHours) / secCount).toFixed(1)
           : avail.toFixed(1);
       const tgt = bdTargets[sec as keyof typeof bdTargets];
-      return { sec, secCount, secBdPct, secMttr, secMtbf, tgt };
+      const secUptime =
+        secCount > 0
+          ? (
+              (Number(secMtbf) /
+                (Number(secMttr === "N/A" ? 0 : secMttr) + Number(secMtbf))) *
+              100
+            ).toFixed(1)
+          : "100.0";
+      const secHoursFormatted = secHours.toFixed(1);
+      return {
+        sec,
+        secCount,
+        secBdPct,
+        secMttr,
+        secMtbf,
+        tgt,
+        secUptime,
+        secHoursFormatted,
+      };
     });
+
+    // Additional calculations for enhanced KPI report
+    const lowStockSpares = safeSpares.filter(
+      (s) => s.qtyInStock <= s.minStockLevel,
+    ).length;
+    const totalInventoryValue = safeSpares.reduce(
+      (sum, s) => sum + s.qtyInStock * (s.costPerUnit || 0),
+      0,
+    );
+    const inProcessTasks = safeTasks.filter(
+      (t) => t.status === "in-process",
+    ).length;
+    const totalPredScheduled = safePredict.filter((p) => {
+      const d = new Date(p.date);
+      return d >= monthStart && d <= monthEnd;
+    }).length;
+    const pmChartData = MONTH_LABELS.map((ml, idx) => {
+      const mNum = BigInt(idx + 1);
+      const pl = pmPlans.filter((p) => p.month === mNum).length;
+      const ac = pmRecords.filter((r) => {
+        const d = new Date(Number(r.completedDate));
+        return (
+          d.getMonth() === idx &&
+          (r.status === "completed" || r.status === "pending-approval")
+        );
+      }).length;
+      return { label: ml, planned: pl, actual: ac };
+    });
+
+    // SVG helper functions
+    function svgProgressBar(
+      value: number,
+      max: number,
+      color: string,
+      width = 340,
+      height = 22,
+    ): string {
+      const pct = max > 0 ? Math.min(100, (value / max) * 100) : 0;
+      const fillW = Math.max(0, (pct / 100) * (width - 2));
+      const label = `${pct.toFixed(1)}%`;
+      return `<svg width="${width}" height="${height}" xmlns="http://www.w3.org/2000/svg">
+  <rect x="1" y="1" width="${width - 2}" height="${height - 2}" rx="4" fill="#e8edf4" stroke="#c8d0dc" stroke-width="0.5"/>
+  <rect x="1" y="1" width="${fillW}" height="${height - 2}" rx="4" fill="${color}"/>
+  <text x="${width / 2}" y="${height / 2 + 4}" text-anchor="middle" font-size="10" font-weight="700" fill="${pct > 45 ? "#fff" : "#333"}" font-family="Arial,sans-serif">${label}</text>
+</svg>`;
+    }
+
+    function svgDonut(pct: number, color: string, size = 70): string {
+      const r = (size - 12) / 2;
+      const cx = size / 2;
+      const cy = size / 2;
+      const circ = 2 * Math.PI * r;
+      const dash = (Math.min(100, pct) / 100) * circ;
+      return `<svg width="${size}" height="${size}" viewBox="0 0 ${size} ${size}" xmlns="http://www.w3.org/2000/svg">
+  <circle cx="${cx}" cy="${cy}" r="${r}" fill="none" stroke="#e0e8f0" stroke-width="8"/>
+  <circle cx="${cx}" cy="${cy}" r="${r}" fill="none" stroke="${color}" stroke-width="8"
+    stroke-dasharray="${dash.toFixed(1)} ${(circ - dash).toFixed(1)}"
+    stroke-dashoffset="${(circ / 4).toFixed(1)}" stroke-linecap="round"/>
+  <text x="${cx}" y="${cy + 4}" text-anchor="middle" font-size="${size < 60 ? 9 : 11}" font-weight="700" fill="${color}" font-family="Arial,sans-serif">${pct.toFixed(1)}%</text>
+</svg>`;
+    }
+
+    function svgBarChart(
+      data: { label: string; value: number; color: string }[],
+      width = 340,
+      height = 100,
+    ): string {
+      if (data.length === 0) return "";
+      const maxVal = Math.max(...data.map((d) => d.value), 1);
+      const barW = Math.floor((width - 20) / data.length) - 4;
+      const chartH = height - 28;
+      return `<svg width="${width}" height="${height}" xmlns="http://www.w3.org/2000/svg">
+  ${data
+    .map((d, i) => {
+      const x = 10 + i * (barW + 4);
+      const barH = Math.max(2, (d.value / maxVal) * chartH);
+      const y = chartH - barH + 4;
+      return `<rect x="${x}" y="${y}" width="${barW}" height="${barH}" rx="2" fill="${d.color}"/>
+  <text x="${x + barW / 2}" y="${y - 2}" text-anchor="middle" font-size="8" fill="#333" font-family="Arial,sans-serif" font-weight="700">${d.value}</text>
+  <text x="${x + barW / 2}" y="${height - 4}" text-anchor="middle" font-size="7.5" fill="#666" font-family="Arial,sans-serif">${d.label}</text>`;
+    })
+    .join("\n  ")}
+</svg>`;
+    }
+
+    function svgGroupedBarChart(
+      data: { label: string; planned: number; actual: number }[],
+      width = 520,
+      height = 120,
+    ): string {
+      if (data.length === 0) return "";
+      const maxVal = Math.max(...data.flatMap((d) => [d.planned, d.actual]), 1);
+      const slotW = Math.floor((width - 20) / data.length);
+      const barW = Math.max(4, Math.floor(slotW * 0.35));
+      const chartH = height - 30;
+      const today = new Date();
+      return `<svg width="${width}" height="${height}" xmlns="http://www.w3.org/2000/svg">
+  <line x1="10" y1="${chartH + 4}" x2="${width - 10}" y2="${chartH + 4}" stroke="#ccc" stroke-width="0.5"/>
+  ${data
+    .map((d, i) => {
+      const slotX = 10 + i * slotW;
+      const cx = slotX + slotW / 2;
+      const isFuture = i > today.getMonth();
+      const planH = isFuture ? 0 : Math.max(2, (d.planned / maxVal) * chartH);
+      const actH = isFuture
+        ? 0
+        : Math.max(d.actual > 0 ? 2 : 0, (d.actual / maxVal) * chartH);
+      const planY = chartH - planH + 4;
+      const actY = chartH - actH + 4;
+      return `<rect x="${cx - barW - 1}" y="${planY}" width="${barW}" height="${planH}" rx="1" fill="#3b82f6" opacity="0.85"/>
+  <rect x="${cx + 1}" y="${actY}" width="${barW}" height="${actH}" rx="1" fill="#22c55e" opacity="0.85"/>
+  ${!isFuture && d.planned > 0 ? `<text x="${cx - barW / 2 - 1}" y="${planY - 2}" text-anchor="middle" font-size="7" fill="#3b82f6" font-family="Arial,sans-serif">${d.planned}</text>` : ""}
+  ${!isFuture && d.actual > 0 ? `<text x="${cx + barW / 2 + 1}" y="${actY - 2}" text-anchor="middle" font-size="7" fill="#22c55e" font-family="Arial,sans-serif">${d.actual}</text>` : ""}
+  <text x="${cx}" y="${height - 6}" text-anchor="middle" font-size="7" fill="#555" font-family="Arial,sans-serif">${d.label}</text>`;
+    })
+    .join("\n  ")}
+  <rect x="${width - 110}" y="4" width="8" height="8" fill="#3b82f6" rx="1"/>
+  <text x="${width - 99}" y="12" font-size="8" fill="#3b82f6" font-family="Arial,sans-serif">Planned</text>
+  <rect x="${width - 55}" y="4" width="8" height="8" fill="#22c55e" rx="1"/>
+  <text x="${width - 44}" y="12" font-size="8" fill="#22c55e" font-family="Arial,sans-serif">Actual</text>
+</svg>`;
+    }
+
+    const genDate = new Date().toLocaleDateString("en-IN", {
+      day: "2-digit",
+      month: "short",
+      year: "numeric",
+      hour: "2-digit",
+      minute: "2-digit",
+    } as Intl.DateTimeFormatOptions);
 
     const html = `<!DOCTYPE html>
 <html lang="en">
@@ -600,200 +748,428 @@ export default function DashboardPage() {
 <meta charset="UTF-8" />
 <title>Monthly KPI Report — ${monthLabel} ${year}</title>
 <style>
-@page { size: A4; margin: 12mm 10mm; }
+@page { size: A4; margin: 10mm 10mm 12mm 10mm; }
 * { box-sizing: border-box; margin: 0; padding: 0; }
-body { font-family: Arial, sans-serif; font-size: 10px; color: #1a1a2e; background: #fff; }
-h2 { font-size: 11px; font-weight: 700; margin: 14px 0 0; text-transform: uppercase; letter-spacing: 0.6px; }
-.section-header { background: #1a3a5c; color: white; padding: 7px 12px; border-radius: 4px 4px 0 0; margin-bottom: 0; font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.6px; }
-.section-body { border: 1px solid #c8d8e8; border-top: none; border-radius: 0 0 4px 4px; padding: 10px; margin-bottom: 14px; background: #fafcff; }
-.kpi-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; }
-.kpi-card { border: 1px solid #c8d8e8; padding: 8px 10px; border-radius: 6px; background: #f0f6ff; border-left: 3px solid #2d6a9f; }
-.kpi-label { font-size: 8.5px; color: #555; text-transform: uppercase; letter-spacing: 0.5px; font-weight: 600; }
-.kpi-value { font-size: 20px; font-weight: 700; margin-top: 2px; color: #1a3a5c; }
-.kpi-card.green { border-left-color: #27ae60; background: #f0fff6; }
-.kpi-card.green .kpi-value { color: #1e8449; }
-.kpi-card.orange { border-left-color: #e67e22; background: #fff8f0; }
-.kpi-card.orange .kpi-value { color: #c0392b; }
-table { width: 100%; border-collapse: collapse; margin-top: 6px; font-size: 9.5px; }
-th { background: #1a3a5c; color: #fff; padding: 6px 8px; text-align: left; font-size: 9px; text-transform: uppercase; letter-spacing: 0.4px; }
-td { padding: 5px 8px; border-bottom: 1px solid #e0e9f4; vertical-align: middle; }
-tr:nth-child(even) td { background: #f4f8fd; }
-.badge-ok { background: #d4edda; color: #155724; padding: 2px 6px; border-radius: 10px; font-size: 8px; font-weight: 700; }
-.badge-low { background: #f8d7da; color: #721c24; padding: 2px 6px; border-radius: 10px; font-size: 8px; font-weight: 700; }
-.footer { margin-top: 16px; border-top: 2px solid #1a3a5c; padding-top: 10px; text-align: center; font-size: 9px; color: #666; }
-@media print { body { -webkit-print-color-adjust: exact; print-color-adjust: exact; } }
+body { font-family: 'Segoe UI', Arial, sans-serif; font-size: 10px; color: #1a1a2e; background: #f4f6fa; }
+@media print { body { background: #fff; -webkit-print-color-adjust: exact; print-color-adjust: exact; } }
+.cover { background: linear-gradient(135deg, #0d2137, #1a3a5c, #2d6a9f); color: white; padding: 20px 24px 18px; border-radius: 8px; margin-bottom: 18px; }
+.cover-brand { font-size: 9px; letter-spacing: 3px; opacity: 0.7; text-transform: uppercase; margin-bottom: 4px; }
+.cover-title { font-size: 22px; font-weight: 800; letter-spacing: 1.5px; text-transform: uppercase; }
+.cover-month { font-size: 14px; font-weight: 600; color: #f6c90e; margin-top: 4px; }
+.cover-date { font-size: 8.5px; opacity: 0.6; margin-top: 5px; }
+.cover-stats { display: grid; grid-template-columns: repeat(6, 1fr); gap: 8px; margin-top: 14px; }
+.cs-item { background: rgba(255,255,255,0.1); border-radius: 6px; padding: 8px 6px; text-align: center; border: 1px solid rgba(255,255,255,0.15); }
+.cs-val { font-size: 16px; font-weight: 800; color: #f6c90e; line-height: 1; }
+.cs-lbl { font-size: 7.5px; opacity: 0.75; text-transform: uppercase; letter-spacing: 0.5px; margin-top: 3px; }
+.sec-wrap { margin-bottom: 16px; border-radius: 6px; overflow: hidden; box-shadow: 0 1px 6px rgba(0,0,0,0.08); }
+.sec-hdr { color: white; padding: 8px 14px; display: flex; align-items: center; gap: 10px; }
+.sec-num { width: 22px; height: 22px; border-radius: 50%; background: rgba(255,255,255,0.25); display: inline-flex; align-items: center; justify-content: center; font-size: 10px; font-weight: 800; flex-shrink: 0; }
+.sec-title { font-size: 11px; font-weight: 800; text-transform: uppercase; letter-spacing: 0.8px; }
+.sec-body { background: #fff; padding: 12px 14px; border: 1px solid rgba(0,0,0,0.07); border-top: none; }
+.hdr-red { background: linear-gradient(135deg, #c0392b, #e74c3c); }
+.hdr-blue { background: linear-gradient(135deg, #1a3a5c, #2d6a9f); }
+.hdr-green { background: linear-gradient(135deg, #1e8449, #27ae60); }
+.hdr-teal { background: linear-gradient(135deg, #0e7490, #0891b2); }
+.hdr-purple { background: linear-gradient(135deg, #6b21a8, #9333ea); }
+.hdr-amber { background: linear-gradient(135deg, #b45309, #d97706); }
+.hdr-cyan { background: linear-gradient(135deg, #0e7490, #06b6d4); }
+.hdr-indigo { background: linear-gradient(135deg, #3730a3, #4f46e5); }
+.hdr-olive { background: linear-gradient(135deg, #3d5a1a, #65a30d); }
+.hdr-orange { background: linear-gradient(135deg, #c2410c, #ea580c); }
+.kpi-grid { display: grid; gap: 8px; }
+.kpi-grid-4 { grid-template-columns: repeat(4, 1fr); }
+.kpi-grid-6 { grid-template-columns: repeat(6, 1fr); }
+.kpi-grid-3 { grid-template-columns: repeat(3, 1fr); }
+.kpi-grid-2 { grid-template-columns: repeat(2, 1fr); }
+.kpi-grid-5 { grid-template-columns: repeat(5, 1fr); }
+.kpi-card { border-radius: 6px; padding: 9px 10px 8px; border: 1px solid #e0e8f0; }
+.kpi-sub { font-size: 7.5px; color: #999; margin-top: 2px; }
+.kpi-lbl { font-size: 8px; text-transform: uppercase; letter-spacing: 0.6px; font-weight: 700; }
+.kpi-val { font-size: 21px; font-weight: 800; line-height: 1.1; margin-top: 2px; }
+.m-blue { background: #eff6ff; border-left: 3px solid #2563eb; }
+.m-blue .kpi-lbl { color: #1e40af; }
+.m-blue .kpi-val { color: #1d4ed8; }
+.m-green { background: #f0fdf4; border-left: 3px solid #16a34a; }
+.m-green .kpi-lbl { color: #166534; }
+.m-green .kpi-val { color: #15803d; }
+.m-red { background: #fef2f2; border-left: 3px solid #dc2626; }
+.m-red .kpi-lbl { color: #991b1b; }
+.m-red .kpi-val { color: #b91c1c; }
+.m-amber { background: #fffbeb; border-left: 3px solid #d97706; }
+.m-amber .kpi-lbl { color: #92400e; }
+.m-amber .kpi-val { color: #b45309; }
+.m-teal { background: #f0fdfa; border-left: 3px solid #0d9488; }
+.m-teal .kpi-lbl { color: #134e4a; }
+.m-teal .kpi-val { color: #0f766e; }
+.m-purple { background: #faf5ff; border-left: 3px solid #9333ea; }
+.m-purple .kpi-lbl { color: #581c87; }
+.m-purple .kpi-val { color: #7e22ce; }
+.m-gray { background: #f9fafb; border-left: 3px solid #6b7280; }
+.m-gray .kpi-lbl { color: #374151; }
+.m-gray .kpi-val { color: #4b5563; }
+.m-indigo { background: #eef2ff; border-left: 3px solid #4f46e5; }
+.m-indigo .kpi-lbl { color: #312e81; }
+.m-indigo .kpi-val { color: #4338ca; }
+table { width: 100%; border-collapse: collapse; margin-top: 8px; font-size: 9.5px; }
+th { color: #fff; padding: 6px 8px; text-align: left; font-size: 8.5px; text-transform: uppercase; letter-spacing: 0.4px; font-weight: 700; }
+td { padding: 5px 8px; border-bottom: 1px solid #e8eef8; vertical-align: middle; }
+tr:nth-child(even) td { background: #f8faff; }
+.th-red { background: #b91c1c; }
+.th-blue { background: #1e40af; }
+.th-green { background: #166534; }
+.th-teal { background: #0f766e; }
+.th-purple { background: #6d28d9; }
+.th-amber { background: #b45309; }
+.th-cyan { background: #0e7490; }
+.th-indigo { background: #3730a3; }
+.th-olive { background: #3d5a1a; }
+.badge-ok { background: #dcfce7; color: #166534; padding: 2px 7px; border-radius: 10px; font-size: 8px; font-weight: 700; }
+.badge-low { background: #fee2e2; color: #991b1b; padding: 2px 7px; border-radius: 10px; font-size: 8px; font-weight: 700; }
+.badge-tgt-ok { background: #d1fae5; color: #065f46; padding: 2px 6px; border-radius: 10px; font-size: 8px; font-weight: 700; }
+.badge-tgt-bad { background: #fee2e2; color: #991b1b; padding: 2px 6px; border-radius: 10px; font-size: 8px; font-weight: 700; }
+.infobox { background: #eff6ff; border-left: 3px solid #2563eb; border-radius: 4px; padding: 8px 12px; margin-top: 10px; font-size: 9.5px; color: #1e40af; }
+.chart-row { display: flex; align-items: flex-start; gap: 14px; margin-top: 10px; }
+.chart-col { flex: 1; }
+.donut-item { text-align: center; }
+.donut-lbl { font-size: 8px; color: #555; margin-top: 3px; font-weight: 600; text-transform: uppercase; }
+.footer { margin-top: 18px; border-top: 3px solid #1a3a5c; padding-top: 10px; display: flex; justify-content: space-between; font-size: 9px; color: #666; }
+.footer-left { font-weight: 700; color: #1a3a5c; }
+.footer-right { text-align: right; }
 </style>
 </head>
 <body>
 
-<div style="background:linear-gradient(135deg,#1a3a5c,#2d6a9f);color:white;padding:16px;border-radius:6px;margin-bottom:16px;text-align:center;">
-  <div style="font-size:11px;letter-spacing:2px;opacity:0.85;margin-bottom:4px;">PLANT MAINTENANCE MANAGEMENT SYSTEM</div>
-  <div style="font-size:20px;font-weight:700;letter-spacing:1px;">MONTHLY KPI REPORT</div>
-  <div style="font-size:13px;margin-top:5px;opacity:0.9;font-weight:600;">${monthLabel} ${year}</div>
-  <div style="font-size:9px;margin-top:6px;opacity:0.7;">Generated: ${new Date().toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" })}</div>
+<div class="cover">
+  <div class="cover-brand">Plant Maintenance Management System</div>
+  <div class="cover-title">Monthly KPI Report</div>
+  <div class="cover-month">${monthLabel} ${year}</div>
+  <div class="cover-date">Generated: ${genDate}</div>
+  <div class="cover-stats">
+    <div class="cs-item"><div class="cs-val">${totalBdCount}</div><div class="cs-lbl">BD Count</div></div>
+    <div class="cs-item"><div class="cs-val">${uptime}%</div><div class="cs-lbl">Uptime</div></div>
+    <div class="cs-item"><div class="cs-val">${pmPct}%</div><div class="cs-lbl">PM Done</div></div>
+    <div class="cs-item"><div class="cs-val">${kaizenSubmitted}</div><div class="cs-lbl">Kaizens</div></div>
+    <div class="cs-item"><div class="cs-val">&#8377;${(totalCost / 1000).toFixed(1)}k</div><div class="cs-lbl">Maint Cost</div></div>
+    <div class="cs-item"><div class="cs-val">${unplannedPct}%</div><div class="cs-lbl">Unplanned</div></div>
+  </div>
 </div>
 
-<div class="section-header">1. Breakdown Summary</div>
-<div class="section-body">
-<div class="kpi-grid">
-  <div class="kpi-card"><div class="kpi-label">BD Count</div><div class="kpi-value">${totalBdCount}</div></div>
-  <div class="kpi-card"><div class="kpi-label">BD Hours</div><div class="kpi-value">${totalBdHours.toFixed(1)}h</div></div>
-  <div class="kpi-card orange"><div class="kpi-label">BD%</div><div class="kpi-value">${bdPct}%</div></div>
-  <div class="kpi-card green"><div class="kpi-label">Uptime%</div><div class="kpi-value">${uptime}%</div></div>
-  <div class="kpi-card"><div class="kpi-label">MTTR (hrs)</div><div class="kpi-value">${mttr}</div></div>
-  <div class="kpi-card"><div class="kpi-label">MTBF (hrs)</div><div class="kpi-value">${mtbf}</div></div>
-  <div class="kpi-card"><div class="kpi-label">Avail. Hrs</div><div class="kpi-value">${maxAvailHrs.toFixed(0)}</div></div>
-</div>
-</div>
-
-<div class="section-header">2. Analysis — Section KPIs</div>
-<div class="section-body">
-<table>
-  <thead><tr><th>Section</th><th>BD Count</th><th>BD%</th><th>MTTR (h)</th><th>MTBF (h)</th><th>Target BD%</th><th>Target Uptime%</th></tr></thead>
-  <tbody>
-    ${sectionRows
-      .map(
-        (s) => `<tr>
-      <td><strong>${s.sec}</strong></td>
-      <td>${s.secCount}</td>
-      <td>${s.secBdPct}%</td>
-      <td>${s.secMttr}</td>
-      <td>${s.secMtbf}</td>
-      <td>${s.tgt?.bdPct ?? "—"}%</td>
-      <td>${s.tgt?.uptime ?? "—"}%</td>
-    </tr>`,
-      )
-      .join("")}
-  </tbody>
-</table>
+<div class="sec-wrap">
+  <div class="sec-hdr hdr-red"><span class="sec-num">1</span><span class="sec-title">Breakdown Summary</span></div>
+  <div class="sec-body">
+    <div class="kpi-grid kpi-grid-6">
+      <div class="kpi-card m-red"><div class="kpi-lbl">BD Count</div><div class="kpi-val">${totalBdCount}</div><div class="kpi-sub">breakdowns this month</div></div>
+      <div class="kpi-card m-red"><div class="kpi-lbl">BD Hours</div><div class="kpi-val">${totalBdHours.toFixed(1)}</div><div class="kpi-sub">total hours lost</div></div>
+      <div class="kpi-card m-amber"><div class="kpi-lbl">BD%</div><div class="kpi-val">${bdPct}%</div><div class="kpi-sub">of available hours</div></div>
+      <div class="kpi-card m-green"><div class="kpi-lbl">Uptime%</div><div class="kpi-val">${uptime}%</div><div class="kpi-sub">plant availability</div></div>
+      <div class="kpi-card m-blue"><div class="kpi-lbl">MTTR (h)</div><div class="kpi-val">${mttr}</div><div class="kpi-sub">mean time to repair</div></div>
+      <div class="kpi-card m-teal"><div class="kpi-lbl">MTBF (h)</div><div class="kpi-val">${mtbf}</div><div class="kpi-sub">mean time between</div></div>
+    </div>
+    <div class="chart-row">
+      <div class="chart-col">
+        <div style="font-size:9px;font-weight:700;color:#555;margin-bottom:4px;text-transform:uppercase;letter-spacing:0.5px;">BD% vs Threshold</div>
+        ${svgProgressBar(Number.parseFloat(bdPct), 100, "#dc2626", 260, 20)}
+        <div style="margin-top:6px;font-size:9px;font-weight:700;color:#555;margin-bottom:4px;text-transform:uppercase;letter-spacing:0.5px;">Uptime %</div>
+        ${svgProgressBar(Number.parseFloat(uptime), 100, "#16a34a", 260, 20)}
+        <div style="margin-top:6px;font-size:9px;font-weight:700;color:#555;margin-bottom:4px;text-transform:uppercase;letter-spacing:0.5px;">BD Hours vs Available</div>
+        ${svgProgressBar(totalBdHours, maxAvailHrs, "#f59e0b", 260, 20)}
+      </div>
+      <div style="display:flex;gap:16px;align-items:center;padding-left:10px;padding-top:4px;">
+        <div class="donut-item">${svgDonut(Number.parseFloat(uptime), "#16a34a", 72)}<div class="donut-lbl">Uptime</div></div>
+        <div class="donut-item">${svgDonut(Math.min(100, Number.parseFloat(bdPct) > 0 ? 100 - Number.parseFloat(bdPct) : 100), "#0d9488", 72)}<div class="donut-lbl">Avail.</div></div>
+      </div>
+    </div>
+    <div style="margin-top:8px;font-size:8.5px;color:#666;">Available Working Hours: <strong>${maxAvailHrs.toFixed(0)} h</strong> (highest section value)</div>
+  </div>
 </div>
 
-<div class="section-header">3. Preventive Maintenance Summary</div>
-<div class="section-body">
-<div class="kpi-grid">
-  <div class="kpi-card green"><div class="kpi-label">Planned PM</div><div class="kpi-value">${plannedPM}</div></div>
-  <div class="kpi-card green"><div class="kpi-label">Completed PM</div><div class="kpi-value">${completedPM}</div></div>
-  <div class="kpi-card"><div class="kpi-label">Completion %</div><div class="kpi-value">${pmPct}%</div></div>
-  <div class="kpi-card orange"><div class="kpi-label">Pending Approvals</div><div class="kpi-value">${pendingPMApprovals}</div></div>
-</div>
-</div>
-
-<div class="section-header">4. Predictive Maintenance Summary</div>
-<div class="section-body">
-<div class="kpi-grid" style="grid-template-columns:repeat(4,1fr)">
-  <div class="kpi-card green"><div class="kpi-label">Completed</div><div class="kpi-value">${monthPredComplete}</div></div>
-  <div class="kpi-card orange"><div class="kpi-label">Pending Approval</div><div class="kpi-value">${monthPredPending}</div></div>
-</div>
-</div>
-
-<div class="section-header">5. Tasks / Planner Summary</div>
-<div class="section-body">
-<div class="kpi-grid">
-  <div class="kpi-card"><div class="kpi-label">Total Tasks</div><div class="kpi-value">${totalTasks}</div></div>
-  <div class="kpi-card green"><div class="kpi-label">Completed</div><div class="kpi-value">${completedTasks}</div></div>
-  <div class="kpi-card orange"><div class="kpi-label">Pending</div><div class="kpi-value">${pendingTasks}</div></div>
-  <div class="kpi-card"><div class="kpi-label">High Priority</div><div class="kpi-value">${highPriTasks}</div></div>
-</div>
-</div>
-
-<div class="section-header">6. Kaizen Summary</div>
-<div class="section-body">
-<div class="kpi-grid" style="grid-template-columns:repeat(4,1fr)">
-  <div class="kpi-card"><div class="kpi-label">Submitted</div><div class="kpi-value">${kaizenSubmitted}</div></div>
-  <div class="kpi-card green"><div class="kpi-label">Approved</div><div class="kpi-value">${kaizenApproved}</div></div>
-  <div class="kpi-card orange"><div class="kpi-label">Pending</div><div class="kpi-value">${kaizenPending}</div></div>
-</div>
-<p style="margin-top:8px;font-size:10px;color:#2d6a9f;font-weight:600;background:#f0f6ff;padding:6px 10px;border-radius:4px;border-left:3px solid #2d6a9f;">
-  Unplanned Maintenance: ${unplannedPct}% &nbsp;|&nbsp; Formula: BD Count (${totalBdCount}) ÷ Total Planned (${totalPlanned}) × 100
-</p>
-</div>
-
-<div class="section-header">7. Electricity Consumption (${monthLabel} ${year})</div>
-<div class="section-body">
-${
-  electricitySummary.length === 0
-    ? '<p style="color:#888;font-style:italic;">No meters configured or selected for KPI.</p>'
-    : `<table>
-  <thead><tr><th>Meter Name</th><th>1st Reading Date</th><th>1st Reading</th><th>Last Reading Date</th><th>Last Reading</th><th>Monthly Consumption</th></tr></thead>
-  <tbody>
-    ${electricitySummary
-      .map(
-        (m) => `<tr>
-      <td>${m.name}</td>
-      <td>${m.firstDate}</td>
-      <td>${m.hasData ? m.firstReading : "-"}</td>
-      <td>${m.lastDate}</td>
-      <td>${m.hasData ? m.lastReading : "-"}</td>
-      <td>${m.hasData ? `${m.consumption.toFixed(2)} ${m.unit}` : "-"}</td>
-    </tr>`,
-      )
-      .join("")}
-    <tr style="font-weight:700;background:#e8f0fb">
-      <td colspan="5" style="text-align:right;color:#1a3a5c;">Total Consumption:</td>
-      <td style="color:#1a3a5c;">${totalElectricityConsumption.toFixed(2)}</td>
-    </tr>
-  </tbody>
-</table>`
-}
+<div class="sec-wrap">
+  <div class="sec-hdr hdr-blue"><span class="sec-num">2</span><span class="sec-title">Analysis — Section KPIs</span></div>
+  <div class="sec-body">
+    <table>
+      <thead><tr>
+        <th class="th-blue">Section</th>
+        <th class="th-blue">BD Count</th>
+        <th class="th-blue">BD Hours</th>
+        <th class="th-blue">BD%</th>
+        <th class="th-blue">MTTR (h)</th>
+        <th class="th-blue">MTBF (h)</th>
+        <th class="th-blue">Uptime%</th>
+        <th class="th-blue">Target BD%</th>
+        <th class="th-blue">Target Uptime%</th>
+        <th class="th-blue">Status</th>
+      </tr></thead>
+      <tbody>
+        ${sectionRows
+          .map((s) => {
+            const bdOk = s.tgt?.bdPct
+              ? Number.parseFloat(s.secBdPct) <=
+                Number.parseFloat(String(s.tgt.bdPct))
+              : true;
+            const upOk = s.tgt?.uptime
+              ? Number.parseFloat(s.secUptime) >=
+                Number.parseFloat(String(s.tgt.uptime))
+              : true;
+            const overall = bdOk && upOk;
+            return `<tr>
+            <td><strong>${s.sec}</strong></td>
+            <td style="text-align:center">${s.secCount}</td>
+            <td style="text-align:center">${s.secHoursFormatted}</td>
+            <td><span class="${Number.parseFloat(s.secBdPct) > (s.tgt?.bdPct ? Number.parseFloat(String(s.tgt.bdPct)) : 999) ? "badge-tgt-bad" : "badge-tgt-ok"}">${s.secBdPct}%</span></td>
+            <td>${s.secMttr}</td>
+            <td>${s.secMtbf}</td>
+            <td><span class="${Number.parseFloat(s.secUptime) < (s.tgt?.uptime ? Number.parseFloat(String(s.tgt.uptime)) : 0) ? "badge-tgt-bad" : "badge-tgt-ok"}">${s.secUptime}%</span></td>
+            <td>${s.tgt?.bdPct ?? "—"}%</td>
+            <td>${s.tgt?.uptime ?? "—"}%</td>
+            <td><span class="${overall ? "badge-ok" : "badge-low"}">${overall ? "✓ ON TARGET" : "⚠ OFF TARGET"}</span></td>
+          </tr>
+          <tr style="background:#fafcff">
+            <td colspan="10" style="padding:4px 8px 6px 12px">
+              <div style="font-size:8px;color:#666;margin-bottom:2px;font-weight:600;">BD% Progress</div>
+              ${svgProgressBar(Number.parseFloat(s.secBdPct), 100, "#dc2626", 480, 16)}
+            </td>
+          </tr>`;
+          })
+          .join("")}
+      </tbody>
+    </table>
+  </div>
 </div>
 
-<div class="section-header">8. Spares / Stock Summary</div>
-<div class="section-body">
-${
-  safeSpares.length === 0
-    ? '<p style="color:#888;font-style:italic;">No spares in master list.</p>'
-    : `
-<table>
-  <thead><tr><th>Part Name</th><th>Specification</th><th>Qty in Stock</th><th>Min Level</th><th>Unit</th><th>Cost/Unit</th><th>Status</th></tr></thead>
-  <tbody>
-    ${safeSpares
-      .map(
-        (s) => `<tr>
-      <td>${s.partName}</td>
-      <td>${s.partSpec || "—"}</td>
-      <td>${s.qtyInStock}</td>
-      <td>${s.minStockLevel}</td>
-      <td>${s.unit}</td>
-      <td>₹${s.costPerUnit}</td>
-      <td><span class="${s.qtyInStock <= s.minStockLevel ? "badge-low" : "badge-ok"}">${s.qtyInStock <= s.minStockLevel ? "LOW STOCK" : "OK"}</span></td>
-    </tr>`,
-      )
-      .join("")}
-  </tbody>
-</table>`
-}
+<div class="sec-wrap">
+  <div class="sec-hdr hdr-green"><span class="sec-num">3</span><span class="sec-title">Preventive Maintenance Summary</span></div>
+  <div class="sec-body">
+    <div class="kpi-grid kpi-grid-4">
+      <div class="kpi-card m-green"><div class="kpi-lbl">Planned PM</div><div class="kpi-val">${plannedPM}</div><div class="kpi-sub">machines scheduled</div></div>
+      <div class="kpi-card m-green"><div class="kpi-lbl">Completed PM</div><div class="kpi-val">${completedPM}</div><div class="kpi-sub">executed this month</div></div>
+      <div class="kpi-card m-blue"><div class="kpi-lbl">Completion %</div><div class="kpi-val">${pmPct}%</div><div class="kpi-sub">of planned</div></div>
+      <div class="kpi-card m-amber"><div class="kpi-lbl">Pending Approvals</div><div class="kpi-val">${pendingPMApprovals}</div><div class="kpi-sub">awaiting admin review</div></div>
+    </div>
+    <div style="margin-top:12px;">
+      <div style="font-size:9px;font-weight:700;color:#166534;margin-bottom:4px;text-transform:uppercase;letter-spacing:0.5px;">PM Completion Rate</div>
+      ${svgProgressBar(completedPM, Math.max(plannedPM, 1), "#16a34a", 520, 22)}
+    </div>
+    <div style="margin-top:12px;">
+      <div style="font-size:9px;font-weight:700;color:#555;margin-bottom:6px;text-transform:uppercase;letter-spacing:0.5px;">PM Planned vs Actual — Monthly Trend (${year})</div>
+      ${svgGroupedBarChart(pmChartData, 520, 110)}
+    </div>
+  </div>
 </div>
 
-<div class="section-header">9. Maintenance Cost (${monthLabel} ${year})</div>
-<div class="section-body">
-${
-  allSpareUsage.length === 0
-    ? '<p style="color:#888;font-style:italic;">No spare usage recorded for this month.</p>'
-    : `
-<table>
-  <thead><tr><th>Date</th><th>Type</th><th>Machine</th><th>Spare Name</th><th>Qty</th><th>Cost (₹)</th></tr></thead>
-  <tbody>
-    ${allSpareUsage
-      .map(
-        (r) => `<tr>
-      <td>${r.date}</td><td>${r.type}</td><td>${r.machine}</td><td>${r.name}</td><td>${r.qty}</td><td>₹${r.cost.toLocaleString()}</td>
-    </tr>`,
-      )
-      .join("")}
-    <tr style="font-weight:700;background:#e8f0fb"><td colspan="5" style="text-align:right;color:#1a3a5c;">Total Cost:</td><td style="color:#1a3a5c;">₹${totalCost.toLocaleString()}</td></tr>
-  </tbody>
-</table>`
-}
+<div class="sec-wrap">
+  <div class="sec-hdr hdr-teal"><span class="sec-num">4</span><span class="sec-title">Predictive Maintenance Summary</span></div>
+  <div class="sec-body">
+    <div class="kpi-grid kpi-grid-4">
+      <div class="kpi-card m-teal"><div class="kpi-lbl">Scheduled</div><div class="kpi-val">${totalPredScheduled}</div><div class="kpi-sub">this month</div></div>
+      <div class="kpi-card m-green"><div class="kpi-lbl">Completed</div><div class="kpi-val">${monthPredComplete}</div><div class="kpi-sub">readings submitted</div></div>
+      <div class="kpi-card m-amber"><div class="kpi-lbl">Pending Approval</div><div class="kpi-val">${monthPredPending}</div><div class="kpi-sub">awaiting admin</div></div>
+      <div class="kpi-card m-blue"><div class="kpi-lbl">Completion %</div><div class="kpi-val">${totalPredScheduled > 0 ? ((monthPredComplete / totalPredScheduled) * 100).toFixed(1) : "0.0"}%</div><div class="kpi-sub">of scheduled</div></div>
+    </div>
+    <div style="margin-top:10px;">
+      <div style="font-size:9px;font-weight:700;color:#0f766e;margin-bottom:4px;text-transform:uppercase;letter-spacing:0.5px;">Completion Rate</div>
+      ${svgProgressBar(monthPredComplete, Math.max(totalPredScheduled, 1), "#0d9488", 400, 20)}
+    </div>
+  </div>
+</div>
+
+<div class="sec-wrap">
+  <div class="sec-hdr hdr-purple"><span class="sec-num">5</span><span class="sec-title">Tasks / Planner Summary</span></div>
+  <div class="sec-body">
+    <div class="kpi-grid kpi-grid-5">
+      <div class="kpi-card m-gray"><div class="kpi-lbl">Total Tasks</div><div class="kpi-val">${totalTasks}</div><div class="kpi-sub">all tasks</div></div>
+      <div class="kpi-card m-green"><div class="kpi-lbl">Completed</div><div class="kpi-val">${completedTasks}</div><div class="kpi-sub">done</div></div>
+      <div class="kpi-card m-blue"><div class="kpi-lbl">In Process</div><div class="kpi-val">${inProcessTasks}</div><div class="kpi-sub">active</div></div>
+      <div class="kpi-card m-amber"><div class="kpi-lbl">Pending</div><div class="kpi-val">${pendingTasks}</div><div class="kpi-sub">not started / hold</div></div>
+      <div class="kpi-card m-red"><div class="kpi-lbl">High Priority</div><div class="kpi-val">${highPriTasks}</div><div class="kpi-sub">urgent tasks</div></div>
+    </div>
+    <div class="chart-row">
+      <div>
+        <div style="font-size:9px;font-weight:700;color:#6d28d9;margin-bottom:4px;text-transform:uppercase;letter-spacing:0.5px;">Completion Rate</div>
+        ${svgProgressBar(completedTasks, Math.max(totalTasks, 1), "#9333ea", 300, 20)}
+      </div>
+      <div style="flex:1;">
+        ${svgBarChart(
+          [
+            { label: "Done", value: completedTasks, color: "#22c55e" },
+            { label: "In Proc.", value: inProcessTasks, color: "#3b82f6" },
+            { label: "Pending", value: pendingTasks, color: "#f59e0b" },
+            { label: "Hi-Pri", value: highPriTasks, color: "#ef4444" },
+          ],
+          220,
+          90,
+        )}
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="sec-wrap">
+  <div class="sec-hdr hdr-amber"><span class="sec-num">6</span><span class="sec-title">Kaizen &amp; Improvement Summary</span></div>
+  <div class="sec-body">
+    <div class="kpi-grid kpi-grid-3">
+      <div class="kpi-card m-gray"><div class="kpi-lbl">Submitted</div><div class="kpi-val">${kaizenSubmitted}</div><div class="kpi-sub">total this month</div></div>
+      <div class="kpi-card m-green"><div class="kpi-lbl">Approved</div><div class="kpi-val">${kaizenApproved}</div><div class="kpi-sub">approved / closed</div></div>
+      <div class="kpi-card m-amber"><div class="kpi-lbl">Pending</div><div class="kpi-val">${kaizenPending}</div><div class="kpi-sub">awaiting approval</div></div>
+    </div>
+  </div>
+</div>
+
+<div class="sec-wrap">
+  <div class="sec-hdr hdr-orange"><span class="sec-num">7</span><span class="sec-title">Unplanned Maintenance Ratio</span></div>
+  <div class="sec-body">
+    <div class="kpi-grid kpi-grid-3" style="margin-bottom:10px;">
+      <div class="kpi-card m-red"><div class="kpi-lbl">Unplanned Ratio</div><div class="kpi-val">${unplannedPct}%</div><div class="kpi-sub">breakdown vs planned</div></div>
+      <div class="kpi-card m-gray"><div class="kpi-lbl">BD Count (Month)</div><div class="kpi-val">${totalBdCount}</div><div class="kpi-sub">total breakdowns</div></div>
+      <div class="kpi-card m-blue"><div class="kpi-lbl">Planned PM + Predictive</div><div class="kpi-val">${totalPlanned}</div><div class="kpi-sub">total planned activities</div></div>
+    </div>
+    <div class="infobox" style="background:#fff7ed;border-left-color:#ea580c;">
+      <strong>Formula:</strong> Unplanned Ratio = BD Count <strong>(${totalBdCount})</strong> &divide; Total Planned PM+Predictive <strong>(${totalPlanned})</strong> &times; 100 = <strong>${unplannedPct}%</strong>
+    </div>
+  </div>
+</div>
+
+<div class="sec-wrap">
+  <div class="sec-hdr hdr-cyan"><span class="sec-num">8</span><span class="sec-title">Electricity Consumption &mdash; ${monthLabel} ${year}</span></div>
+  <div class="sec-body">
+    ${
+      electricitySummary.length === 0
+        ? '<p style="color:#888;font-style:italic;font-size:10px;">No meters configured or selected for KPI report.</p>'
+        : `<table>
+          <thead><tr>
+            <th class="th-cyan">Meter Name</th>
+            <th class="th-cyan">1st Reading Date</th>
+            <th class="th-cyan">1st Reading</th>
+            <th class="th-cyan">Last Reading Date</th>
+            <th class="th-cyan">Last Reading</th>
+            <th class="th-cyan">Monthly Consumption</th>
+            <th class="th-cyan">Unit</th>
+          </tr></thead>
+          <tbody>
+            ${electricitySummary
+              .map(
+                (m) => `<tr>
+              <td><strong>${m.name}</strong></td>
+              <td>${m.firstDate}</td>
+              <td>$m.hasData ? m.firstReading : "—"</td>
+              <td>${m.lastDate}</td>
+              <td>$m.hasData ? m.lastReading : "—"</td>
+              <td><strong>${m.hasData ? m.consumption.toFixed(2) : "—"}</strong></td>
+              <td>$m.unit</td>
+            </tr>`,
+              )
+              .join("")}
+            <tr style="background:#e0f2fe;font-weight:800;">
+              <td colspan="5" style="text-align:right;color:#0e7490;font-size:10px;">Total Consumption:</td>
+              <td style="color:#0e7490;font-size:12px;">${totalElectricityConsumption.toFixed(2)}</td>
+              <td></td>
+            </tr>
+          </tbody>
+        </table>`
+    }
+  </div>
+</div>
+
+<div class="sec-wrap">
+  <div class="sec-hdr hdr-indigo"><span class="sec-num">9</span><span class="sec-title">Spares / Stock Summary</span></div>
+  <div class="sec-body">
+    <div class="kpi-grid kpi-grid-3" style="margin-bottom:10px;">
+      <div class="kpi-card m-indigo"><div class="kpi-lbl">Total Spare Items</div><div class="kpi-val">${safeSpares.length}</div><div class="kpi-sub">in spare master list</div></div>
+      <div class="kpi-card m-red"><div class="kpi-lbl">Low Stock Items</div><div class="kpi-val">${lowStockSpares}</div><div class="kpi-sub">at or below min level</div></div>
+      <div class="kpi-card" style="background:#ecfdf5;border-left:3px solid #059669;border-radius:6px;padding:9px 10px 8px;border:1px solid #e0e8f0;"><div class="kpi-lbl" style="font-size:8px;text-transform:uppercase;letter-spacing:0.6px;font-weight:700;color:#065f46;">Total Inventory Value</div><div class="kpi-val" style="font-size:21px;font-weight:800;line-height:1.1;margin-top:2px;color:#059669;">&#8377;${totalInventoryValue.toLocaleString()}</div><div class="kpi-sub" style="font-size:7.5px;color:#999;margin-top:2px;">stock qty &times; cost per unit</div></div>
+    </div>
+    ${
+      safeSpares.length === 0
+        ? '<p style="color:#888;font-style:italic;font-size:10px;">No spares in master list.</p>'
+        : `<table>
+          <thead><tr>
+            <th class="th-indigo">Part Name</th>
+            <th class="th-indigo">Specification</th>
+            <th class="th-indigo">Qty in Stock</th>
+            <th class="th-indigo">Min Level</th>
+            <th class="th-indigo">Unit</th>
+            <th class="th-indigo">Cost / Unit</th>
+            <th class="th-indigo">Stock Value</th>
+            <th class="th-indigo">Machine / Section</th>
+            <th class="th-indigo">Status</th>
+          </tr></thead>
+          <tbody>
+            ${safeSpares
+              .map(
+                (s) => `<tr>
+              <td><strong>${s.partName}</strong></td>
+              <td>${s.partSpec || "—"}</td>
+              <td style="text-align:center;font-weight:700;">${s.qtyInStock}</td>
+              <td style="text-align:center;">${s.minStockLevel}</td>
+              <td>${s.unit}</td>
+              <td>&#8377;${s.costPerUnit}</td>
+              <td style="text-align:right;font-weight:700;color:#059669;">&#8377;${(s.qtyInStock * (s.costPerUnit || 0)).toLocaleString()}</td>
+              <td>${s.applicableMachineSection || "—"}</td>
+              <td><span class="${s.qtyInStock <= s.minStockLevel ? "badge-low" : "badge-ok"}">${s.qtyInStock <= s.minStockLevel ? "&#9888; LOW STOCK" : "&#10003; OK"}</span></td>
+            </tr>`,
+              )
+              .join("")}
+          </tbody>
+        </table>`
+    }
+  </div>
+</div>
+
+<div class="sec-wrap">
+  <div class="sec-hdr hdr-olive"><span class="sec-num">10</span><span class="sec-title">Maintenance Cost &mdash; ${monthLabel} ${year}</span></div>
+  <div class="sec-body">
+    <div class="kpi-grid kpi-grid-2" style="margin-bottom:10px;">
+      <div class="kpi-card" style="background:#f7fee7;border-left:3px solid #65a30d;border-radius:6px;padding:9px 10px 8px;border:1px solid #e0e8f0;"><div class="kpi-lbl" style="font-size:8px;text-transform:uppercase;letter-spacing:0.6px;font-weight:700;color:#3f6212;">Total Maintenance Cost</div><div class="kpi-val" style="font-size:21px;font-weight:800;line-height:1.1;margin-top:2px;color:#4d7c0f;">&#8377;${totalCost.toLocaleString()}</div><div class="kpi-sub" style="font-size:7.5px;color:#999;margin-top:2px;">all spare usage this month</div></div>
+      <div class="kpi-card m-gray"><div class="kpi-lbl">Spare Entries</div><div class="kpi-val">${allSpareUsage.length}</div><div class="kpi-sub">activities with spares used</div></div>
+    </div>
+    ${
+      allSpareUsage.length === 0
+        ? '<p style="color:#888;font-style:italic;font-size:10px;">No spare usage recorded for this month.</p>'
+        : `<table>
+          <thead><tr>
+            <th class="th-olive">Date</th>
+            <th class="th-olive">Work Type</th>
+            <th class="th-olive">Machine</th>
+            <th class="th-olive">Spare Name</th>
+            <th class="th-olive">Qty</th>
+            <th class="th-olive">Cost (&#8377;)</th>
+          </tr></thead>
+          <tbody>
+            ${allSpareUsage
+              .map(
+                (r) => `<tr>
+              <td>${r.date}</td>
+              <td>${r.type}</td>
+              <td>${r.machine}</td>
+              <td>${r.name}</td>
+              <td style="text-align:center;">${r.qty}</td>
+              <td style="text-align:right;font-weight:700;">&#8377;${r.cost.toLocaleString()}</td>
+            </tr>`,
+              )
+              .join("")}
+            <tr style="background:#ecfccb;font-weight:800;">
+              <td colspan="5" style="text-align:right;color:#3f6212;font-size:10px;">Total Cost:</td>
+              <td style="text-align:right;color:#3f6212;font-size:13px;">&#8377;${totalCost.toLocaleString()}</td>
+            </tr>
+          </tbody>
+        </table>`
+    }
+  </div>
 </div>
 
 <div class="footer">
-  <div style="font-weight:700;color:#1a3a5c;font-size:10px;margin-bottom:3px;">Plant Maintenance Management System</div>
-  <div>Monthly KPI Report — ${monthLabel} ${year}</div>
-  <div style="margin-top:3px;">Generated: ${new Date().toLocaleString("en-IN")}</div>
+  <div class="footer-left">
+    <div>Plant Maintenance Management System</div>
+    <div style="font-weight:400;color:#888;font-size:8.5px;margin-top:2px;">Monthly KPI Report &mdash; ${monthLabel} ${year}</div>
+  </div>
+  <div class="footer-right">
+    <div>Generated: ${genDate}</div>
+    <div style="color:#aaa;font-size:8px;margin-top:2px;">PMMS &mdash; Confidential</div>
+  </div>
 </div>
+
 </body></html>`;
 
-    const win = window.open("", "_blank", "width=1000,height=800");
+    const win = window.open("", "_blank", "width=1100,height=850");
     if (!win) {
       toast.error("Pop-up blocked. Please allow pop-ups and try again.");
       return;
