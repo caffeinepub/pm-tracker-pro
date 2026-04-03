@@ -1050,11 +1050,11 @@ tr:nth-child(even) td { background: #f8faff; }
                 (m) => `<tr>
               <td><strong>${m.name}</strong></td>
               <td>${m.firstDate}</td>
-              <td>$m.hasData ? m.firstReading : "—"</td>
+              <td>${m.hasData ? m.firstReading : "—"}</td>
               <td>${m.lastDate}</td>
-              <td>$m.hasData ? m.lastReading : "—"</td>
+              <td>${m.hasData ? m.lastReading : "—"}</td>
               <td><strong>${m.hasData ? m.consumption.toFixed(2) : "—"}</strong></td>
-              <td>$m.unit</td>
+              <td>${m.unit}</td>
             </tr>`,
               )
               .join("")}
