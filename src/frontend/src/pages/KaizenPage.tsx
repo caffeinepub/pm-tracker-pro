@@ -120,8 +120,7 @@ const EMPTY_FORM = {
 };
 
 export default function KaizenPage() {
-  const { user, logout, navigate, kaizenRecords, addKaizen, updateKaizen } =
-    useApp();
+  const { user, logout, kaizenRecords, addKaizen, updateKaizen } = useApp();
 
   const [showForm, setShowForm] = useState(false);
   const [editingKaizenId, setEditingKaizenId] = useState<string | null>(null);
@@ -340,13 +339,6 @@ export default function KaizenPage() {
       `Kaizen_Records_${new Date().toISOString().split("T")[0]}.xlsx`,
     );
   }
-
-  const navItems = [
-    { label: "Dashboard", page: "dashboard" as const },
-    { label: "Preventive Maintenance", page: "preventive" as const },
-    { label: "Breakdown", page: "breakdown-panel" as const },
-    { label: "Analysis", page: "analysis" as const },
-  ];
 
   const inputStyle = {
     background: "oklch(0.19 0.020 255)",
@@ -797,20 +789,6 @@ export default function KaizenPage() {
                 Kaizen{" "}
                 <span style={{ color: "oklch(0.75 0.16 290)" }}>Panel</span>
               </span>
-              <nav className="hidden md:flex items-center gap-1 ml-4">
-                {navItems.map((item) => (
-                  <button
-                    key={item.label}
-                    type="button"
-                    data-ocid="nav.link"
-                    onClick={() => navigate(item.page)}
-                    className="px-3 py-1.5 rounded-lg text-sm font-medium hover:bg-white/5"
-                    style={{ color: "oklch(0.68 0.010 260)" }}
-                  >
-                    {item.label}
-                  </button>
-                ))}
-              </nav>
             </div>
             <div className="flex items-center gap-2">
               <NotificationBell />

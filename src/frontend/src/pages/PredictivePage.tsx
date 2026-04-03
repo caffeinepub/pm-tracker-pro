@@ -57,7 +57,6 @@ export default function PredictivePage() {
   const {
     user,
     logout,
-    navigate,
     machines,
     predictivePlans,
     predictiveRecords,
@@ -367,13 +366,6 @@ export default function PredictivePage() {
     e.target.value = "";
   }
 
-  const navItems = [
-    { label: "Dashboard", page: "dashboard" as const },
-    { label: "Preventive Maintenance", page: "preventive" as const },
-    { label: "Breakdown", page: "breakdown-panel" as const },
-    { label: "Analysis", page: "analysis" as const },
-  ];
-
   const inputStyle = {
     background: "oklch(0.19 0.020 255)",
     borderColor: "oklch(0.34 0.030 252)",
@@ -424,20 +416,6 @@ export default function PredictivePage() {
                   Maintenance
                 </span>
               </span>
-              <nav className="hidden md:flex items-center gap-1 ml-4">
-                {navItems.map((item) => (
-                  <button
-                    key={item.label}
-                    type="button"
-                    data-ocid="nav.link"
-                    onClick={() => navigate(item.page)}
-                    className="px-3 py-1.5 rounded-lg text-sm font-medium hover:bg-white/5"
-                    style={{ color: "oklch(0.68 0.010 260)" }}
-                  >
-                    {item.label}
-                  </button>
-                ))}
-              </nav>
             </div>
             <div className="flex items-center gap-2">
               <NotificationBell />
