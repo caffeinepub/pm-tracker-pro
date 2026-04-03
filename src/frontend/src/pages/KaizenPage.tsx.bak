@@ -353,15 +353,8 @@ export default function KaizenPage() {
         @media print {
           body * { visibility: hidden !important; }
           #kaizen-slip-print, #kaizen-slip-print * { visibility: visible !important; }
-          #kaizen-slip-print {
-            position: fixed;
-            top: 0;
-            left: 0;
-            width: 297mm;
-            height: 210mm;
-            overflow: hidden;
-          }
-          @page { size: A4 landscape; margin: 8mm; }
+          #kaizen-slip-print { position: fixed; top: 0; left: 0; width: 100%; }
+          @page { size: A4; margin: 10mm; }
         }
       `}</style>
 
@@ -372,387 +365,247 @@ export default function KaizenPage() {
           position: "fixed",
           top: 0,
           left: 0,
-          width: "297mm",
-          height: "210mm",
+          width: "100%",
           zIndex: -9999,
           pointerEvents: "none",
-          fontFamily: "Arial, Helvetica, sans-serif",
+          fontFamily: "Arial, sans-serif",
           color: "#000",
           background: "#fff",
+          padding: "10mm",
           boxSizing: "border-box",
-          display: "flex",
-          flexDirection: "column",
-          fontSize: "11px",
-          lineHeight: "1.4",
         }}
       >
         {viewSlip && (
-          <div
-            style={{
-              display: "flex",
-              flexDirection: "column",
-              height: "100%",
-              padding: "6mm 8mm",
-              boxSizing: "border-box",
-              gap: "4px",
-            }}
-          >
-            {/* ── HEADER ROW ── */}
+          <div style={{ maxWidth: "100%", boxSizing: "border-box" }}>
+            {/* Header */}
             <div
               style={{
-                display: "flex",
-                alignItems: "center",
-                borderBottom: "2px solid #1a3a5c",
-                paddingBottom: "5px",
-                marginBottom: "4px",
-                gap: "8px",
+                textAlign: "center",
+                borderBottom: "2px solid #222",
+                paddingBottom: "10px",
+                marginBottom: "12px",
+                position: "relative",
               }}
             >
-              <div style={{ flex: "1", minWidth: 0 }}>
-                <div
-                  style={{
-                    fontSize: "9px",
-                    color: "#555",
-                    fontWeight: "600",
-                    textTransform: "uppercase",
-                    letterSpacing: "0.5px",
-                  }}
-                >
-                  Plant Maintenance Management System
-                </div>
-              </div>
-              <div
+              <h1
                 style={{
-                  background: "#1a3a5c",
-                  color: "#fff",
-                  padding: "6px 20px",
-                  textAlign: "center",
-                  borderRadius: "2px",
-                  flex: "0 0 auto",
+                  fontSize: "22px",
+                  fontWeight: "bold",
+                  margin: "0 0 4px 0",
+                  letterSpacing: "1px",
                 }}
               >
-                <div
-                  style={{
-                    fontSize: "16px",
-                    fontWeight: "bold",
-                    letterSpacing: "2px",
-                    whiteSpace: "nowrap",
-                  }}
-                >
-                  KAIZEN IMPROVEMENT SLIP
-                </div>
-              </div>
-              <div style={{ flex: "1", minWidth: 0, textAlign: "right" }}>
-                <div style={{ fontSize: "9px", color: "#555" }}>
-                  Slip No:{" "}
-                  <strong style={{ color: "#000" }}>
-                    {viewSlip.id.slice(0, 10).toUpperCase()}
-                  </strong>
-                </div>
-                <div
-                  style={{ fontSize: "9px", color: "#555", marginTop: "2px" }}
-                >
-                  Date:{" "}
-                  <strong style={{ color: "#000" }}>
-                    {new Date(viewSlip.submittedAt).toLocaleDateString()}
-                  </strong>
-                </div>
-              </div>
-            </div>
-
-            {/* ── INFO ROW (details + descriptions) ── */}
-            <div style={{ display: "flex", gap: "8px", flex: "0 0 auto" }}>
-              {/* Left: Details table */}
-              <div style={{ flex: "0 0 200px" }}>
-                <div
-                  style={{
-                    background: "#f0f0f0",
-                    padding: "3px 6px",
-                    fontWeight: "700",
-                    fontSize: "10px",
-                    textTransform: "uppercase",
-                    letterSpacing: "0.5px",
-                    border: "1px solid #ccc",
-                    borderBottom: "none",
-                  }}
-                >
-                  Kaizen Details
-                </div>
-                <table
-                  style={{
-                    width: "100%",
-                    borderCollapse: "collapse",
-                    fontSize: "10px",
-                  }}
-                >
-                  <tbody>
-                    {(
-                      [
-                        ["Title", viewSlip.title],
-                        ["Category", viewSlip.category],
-                        ["Machine / Area", viewSlip.machineArea || "—"],
-                        ["Submitted By", viewSlip.submittedBy],
-                        ["Status", viewSlip.status],
-                      ] as [string, string][]
-                    ).map(([k, v], i) => (
-                      <tr key={k}>
-                        <td
-                          style={{
-                            padding: "3px 6px",
-                            fontWeight: "600",
-                            background: i % 2 === 0 ? "#f8f8f8" : "#fff",
-                            width: "45%",
-                            border: "1px solid #ccc",
-                            fontSize: "10px",
-                          }}
-                        >
-                          {k}
-                        </td>
-                        <td
-                          style={{
-                            padding: "3px 6px",
-                            border: "1px solid #ccc",
-                            fontSize: "10px",
-                          }}
-                        >
-                          {v}
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-
-              {/* Right: Descriptions */}
-              <div
-                style={{
-                  flex: 1,
-                  display: "flex",
-                  flexDirection: "column",
-                  gap: "4px",
-                }}
+                KAIZEN IMPROVEMENT SLIP
+              </h1>
+              <p
+                style={{ fontSize: "12px", color: "#444", margin: "0 0 4px 0" }}
               >
-                <div style={{ border: "1px solid #ccc", flex: 1 }}>
-                  <div
-                    style={{
-                      background: "#f0f0f0",
-                      padding: "3px 6px",
-                      fontWeight: "700",
-                      fontSize: "10px",
-                      textTransform: "uppercase",
-                      letterSpacing: "0.5px",
-                      borderBottom: "1px solid #ccc",
-                    }}
-                  >
-                    Problem / Before Condition
-                  </div>
-                  <div
-                    style={{
-                      padding: "4px 6px",
-                      fontSize: "10px",
-                      whiteSpace: "pre-wrap",
-                      lineHeight: "1.4",
-                    }}
-                  >
-                    {viewSlip.problemDescription}
-                  </div>
-                </div>
-                <div style={{ border: "1px solid #ccc", flex: 1 }}>
-                  <div
-                    style={{
-                      background: "#f0f0f0",
-                      padding: "3px 6px",
-                      fontWeight: "700",
-                      fontSize: "10px",
-                      textTransform: "uppercase",
-                      letterSpacing: "0.5px",
-                      borderBottom: "1px solid #ccc",
-                    }}
-                  >
-                    Improvement / After Condition
-                  </div>
-                  <div
-                    style={{
-                      padding: "4px 6px",
-                      fontSize: "10px",
-                      whiteSpace: "pre-wrap",
-                      lineHeight: "1.4",
-                    }}
-                  >
-                    {viewSlip.improvementDescription}
-                  </div>
-                </div>
-              </div>
+                Plant Maintenance Management System
+              </p>
+              <p style={{ fontSize: "11px", color: "#666", margin: 0 }}>
+                Date: {new Date(viewSlip.submittedAt).toLocaleDateString()}
+              </p>
             </div>
 
-            {/* ── PHOTOS ROW ── */}
+            {/* Details table */}
+            <table
+              style={{
+                width: "100%",
+                borderCollapse: "collapse",
+                marginBottom: "12px",
+                fontSize: "12px",
+              }}
+            >
+              <tbody>
+                {(
+                  [
+                    ["Kaizen ID", viewSlip.id],
+                    [
+                      "Date",
+                      new Date(viewSlip.submittedAt).toLocaleDateString(),
+                    ],
+                    ["Title", viewSlip.title],
+                    ["Category", viewSlip.category],
+                    ["Machine / Area", viewSlip.machineArea || "-"],
+                    ["Submitted By", viewSlip.submittedBy],
+                    ["Status", viewSlip.status],
+                  ] as [string, string][]
+                ).map(([k, v], i) => (
+                  <tr key={k}>
+                    <td
+                      style={{
+                        padding: "5px 10px",
+                        fontWeight: "600",
+                        background: i % 2 === 0 ? "#f5f5f5" : "#ececec",
+                        width: "30%",
+                        border: "1px solid #ccc",
+                        fontSize: "12px",
+                      }}
+                    >
+                      {k}
+                    </td>
+                    <td
+                      style={{
+                        padding: "5px 10px",
+                        border: "1px solid #ccc",
+                        fontSize: "12px",
+                      }}
+                    >
+                      {v}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+
+            {/* Problem Description */}
             <div
               style={{
-                display: "flex",
-                gap: "8px",
-                flex: "1 1 0",
-                minHeight: 0,
+                border: "1px solid #ccc",
+                padding: "10px",
+                marginBottom: "12px",
               }}
             >
-              {/* BEFORE */}
-              <div
+              <p
                 style={{
-                  flex: 1,
-                  border: "1px solid #ccc",
-                  display: "flex",
-                  flexDirection: "column",
-                  minHeight: 0,
+                  fontWeight: "700",
+                  marginBottom: "6px",
+                  fontSize: "13px",
+                  margin: "0 0 6px 0",
                 }}
               >
-                <div
-                  style={{
-                    background: "#1a3a5c",
-                    color: "#fff",
-                    padding: "3px 8px",
-                    fontWeight: "700",
-                    fontSize: "10px",
-                    textTransform: "uppercase",
-                    letterSpacing: "1px",
-                    textAlign: "center",
-                    flexShrink: 0,
-                  }}
-                >
-                  ▶ BEFORE
-                </div>
-                <div
-                  style={{
-                    flex: 1,
-                    display: "flex",
-                    alignItems: "center",
-                    justifyContent: "center",
-                    padding: "4px",
-                    overflow: "hidden",
-                  }}
-                >
-                  {viewSlip.beforePhotoDataUrl ? (
-                    <img
-                      src={viewSlip.beforePhotoDataUrl}
-                      alt="Before"
-                      style={{
-                        maxWidth: "100%",
-                        maxHeight: "100%",
-                        objectFit: "contain",
-                        display: "block",
-                      }}
-                    />
-                  ) : (
-                    <div
-                      style={{
-                        color: "#aaa",
-                        fontSize: "10px",
-                        textAlign: "center",
-                        border: "1px dashed #ccc",
-                        padding: "16px 24px",
-                      }}
-                    >
-                      No photo uploaded
-                    </div>
-                  )}
-                </div>
-              </div>
-
-              {/* AFTER */}
-              <div
-                style={{
-                  flex: 1,
-                  border: "1px solid #ccc",
-                  display: "flex",
-                  flexDirection: "column",
-                  minHeight: 0,
-                }}
+                Problem / Before Condition:
+              </p>
+              <p
+                style={{ fontSize: "12px", whiteSpace: "pre-wrap", margin: 0 }}
               >
-                <div
-                  style={{
-                    background: "#2a6a3c",
-                    color: "#fff",
-                    padding: "3px 8px",
-                    fontWeight: "700",
-                    fontSize: "10px",
-                    textTransform: "uppercase",
-                    letterSpacing: "1px",
-                    textAlign: "center",
-                    flexShrink: 0,
-                  }}
-                >
-                  ✔ AFTER
-                </div>
-                <div
-                  style={{
-                    flex: 1,
-                    display: "flex",
-                    alignItems: "center",
-                    justifyContent: "center",
-                    padding: "4px",
-                    overflow: "hidden",
-                  }}
-                >
-                  {viewSlip.afterPhotoDataUrl ? (
-                    <img
-                      src={viewSlip.afterPhotoDataUrl}
-                      alt="After"
-                      style={{
-                        maxWidth: "100%",
-                        maxHeight: "100%",
-                        objectFit: "contain",
-                        display: "block",
-                      }}
-                    />
-                  ) : (
-                    <div
-                      style={{
-                        color: "#aaa",
-                        fontSize: "10px",
-                        textAlign: "center",
-                        border: "1px dashed #ccc",
-                        padding: "16px 24px",
-                      }}
-                    >
-                      No photo uploaded
-                    </div>
-                  )}
-                </div>
-              </div>
+                {viewSlip.problemDescription}
+              </p>
             </div>
 
-            {/* ── SPARES TABLE (compact, only if exists) ── */}
+            {/* Before Photo — full width */}
+            {viewSlip.beforePhotoDataUrl && (
+              <div
+                style={{
+                  border: "1px solid #ccc",
+                  padding: "10px",
+                  marginBottom: "12px",
+                }}
+              >
+                <p
+                  style={{
+                    fontWeight: "700",
+                    fontSize: "13px",
+                    margin: "0 0 8px 0",
+                  }}
+                >
+                  Before Photo:
+                </p>
+                <img
+                  src={viewSlip.beforePhotoDataUrl}
+                  alt="Before"
+                  style={{
+                    maxWidth: "100%",
+                    maxHeight: "280px",
+                    objectFit: "contain",
+                    display: "block",
+                  }}
+                />
+              </div>
+            )}
+
+            {/* Improvement Description */}
+            <div
+              style={{
+                border: "1px solid #ccc",
+                padding: "10px",
+                marginBottom: "12px",
+              }}
+            >
+              <p
+                style={{
+                  fontWeight: "700",
+                  marginBottom: "6px",
+                  fontSize: "13px",
+                  margin: "0 0 6px 0",
+                }}
+              >
+                Improvement / After Condition:
+              </p>
+              <p
+                style={{ fontSize: "12px", whiteSpace: "pre-wrap", margin: 0 }}
+              >
+                {viewSlip.improvementDescription}
+              </p>
+            </div>
+
+            {/* After Photo — full width */}
+            {viewSlip.afterPhotoDataUrl && (
+              <div
+                style={{
+                  border: "1px solid #ccc",
+                  padding: "10px",
+                  marginBottom: "12px",
+                }}
+              >
+                <p
+                  style={{
+                    fontWeight: "700",
+                    fontSize: "13px",
+                    margin: "0 0 8px 0",
+                  }}
+                >
+                  After Photo:
+                </p>
+                <img
+                  src={viewSlip.afterPhotoDataUrl}
+                  alt="After"
+                  style={{
+                    maxWidth: "100%",
+                    maxHeight: "280px",
+                    objectFit: "contain",
+                    display: "block",
+                  }}
+                />
+              </div>
+            )}
+
+            {/* Spares Used */}
             {viewSlip.spares && viewSlip.spares.length > 0 && (
-              <div style={{ flex: "0 0 auto", border: "1px solid #ccc" }}>
-                <div
+              <div
+                style={{
+                  border: "1px solid #ccc",
+                  padding: "10px",
+                  marginBottom: "12px",
+                }}
+              >
+                <p
                   style={{
-                    background: "#f0f0f0",
-                    padding: "2px 6px",
                     fontWeight: "700",
-                    fontSize: "10px",
-                    textTransform: "uppercase",
-                    letterSpacing: "0.5px",
-                    borderBottom: "1px solid #ccc",
+                    fontSize: "13px",
+                    margin: "0 0 8px 0",
                   }}
                 >
-                  Spares Used
-                </div>
+                  Spares Used:
+                </p>
                 <table
                   style={{
                     width: "100%",
                     borderCollapse: "collapse",
-                    fontSize: "10px",
+                    fontSize: "11px",
                   }}
                 >
                   <thead>
-                    <tr style={{ background: "#f8f8f8" }}>
+                    <tr style={{ background: "#f0f0f0" }}>
                       {["Sr", "Part Name", "Part No.", "Qty", "Unit"].map(
                         (h) => (
                           <th
                             key={h}
                             style={{
-                              padding: "2px 6px",
+                              padding: "5px 8px",
                               border: "1px solid #ccc",
-                              fontWeight: "700",
                               textAlign: "left",
+                              fontWeight: "600",
                             }}
                           >
                             {h}
@@ -763,10 +616,10 @@ export default function KaizenPage() {
                   </thead>
                   <tbody>
                     {viewSlip.spares.map((spare, i) => (
-                      <tr key={`${spare.name}${i}p`}>
+                      <tr key={spare.name + spare.partNo + String(i)}>
                         <td
                           style={{
-                            padding: "2px 6px",
+                            padding: "4px 8px",
                             border: "1px solid #ccc",
                           }}
                         >
@@ -774,7 +627,7 @@ export default function KaizenPage() {
                         </td>
                         <td
                           style={{
-                            padding: "2px 6px",
+                            padding: "4px 8px",
                             border: "1px solid #ccc",
                           }}
                         >
@@ -782,7 +635,7 @@ export default function KaizenPage() {
                         </td>
                         <td
                           style={{
-                            padding: "2px 6px",
+                            padding: "4px 8px",
                             border: "1px solid #ccc",
                           }}
                         >
@@ -790,7 +643,7 @@ export default function KaizenPage() {
                         </td>
                         <td
                           style={{
-                            padding: "2px 6px",
+                            padding: "4px 8px",
                             border: "1px solid #ccc",
                           }}
                         >
@@ -798,7 +651,7 @@ export default function KaizenPage() {
                         </td>
                         <td
                           style={{
-                            padding: "2px 6px",
+                            padding: "4px 8px",
                             border: "1px solid #ccc",
                           }}
                         >
@@ -811,96 +664,92 @@ export default function KaizenPage() {
               </div>
             )}
 
-            {/* ── FOOTER / SIGNATURES ── */}
+            {/* Rejection reason if applicable */}
+            {viewSlip.rejectionReason && (
+              <div
+                style={{
+                  border: "1px solid #e0a0a0",
+                  padding: "10px",
+                  marginBottom: "12px",
+                  background: "#fff5f5",
+                }}
+              >
+                <p
+                  style={{
+                    fontWeight: "700",
+                    fontSize: "12px",
+                    margin: "0 0 4px 0",
+                  }}
+                >
+                  Rejection Reason:
+                </p>
+                <p style={{ fontSize: "12px", margin: 0 }}>
+                  {viewSlip.rejectionReason}
+                </p>
+              </div>
+            )}
+
+            {/* Approval section */}
             <div
               style={{
                 display: "flex",
-                gap: "8px",
-                flex: "0 0 auto",
-                borderTop: "1px solid #1a3a5c",
-                paddingTop: "4px",
-                marginTop: "2px",
+                gap: "16px",
+                marginTop: "20px",
+                borderTop: "1px solid #ccc",
+                paddingTop: "14px",
               }}
             >
               <div
                 style={{
                   flex: 1,
                   border: "1px solid #ccc",
-                  padding: "5px 8px",
+                  padding: "12px",
+                  minHeight: "70px",
                 }}
               >
-                <div
+                <p
                   style={{
-                    fontSize: "10px",
-                    fontWeight: "700",
-                    marginBottom: "2px",
-                    color: "#333",
+                    fontSize: "12px",
+                    fontWeight: "600",
+                    margin: "0 0 4px 0",
                   }}
                 >
-                  SUBMITTED BY
-                </div>
-                <div style={{ fontSize: "10px", marginBottom: "10px" }}>
+                  Submitted By:
+                </p>
+                <p style={{ fontSize: "12px", margin: "0 0 8px 0" }}>
                   {viewSlip.submittedBy}
-                </div>
-                <div style={{ fontSize: "9px", color: "#555" }}>
+                </p>
+                <p style={{ fontSize: "12px", margin: 0 }}>
                   Date: {new Date(viewSlip.submittedAt).toLocaleDateString()}
-                </div>
+                </p>
               </div>
               <div
                 style={{
                   flex: 1,
                   border: "1px solid #ccc",
-                  padding: "5px 8px",
+                  padding: "12px",
+                  minHeight: "70px",
                 }}
               >
-                <div
+                <p
                   style={{
-                    fontSize: "10px",
-                    fontWeight: "700",
-                    marginBottom: "2px",
-                    color: "#333",
+                    fontSize: "12px",
+                    fontWeight: "600",
+                    margin: "0 0 4px 0",
                   }}
                 >
-                  APPROVED BY
-                </div>
+                  Approved By:
+                </p>
                 <div
                   style={{
-                    borderBottom: "1px solid #888",
-                    height: "18px",
+                    borderBottom: "1px solid #555",
+                    height: "28px",
                     marginBottom: "6px",
                   }}
                 />
-                <div style={{ fontSize: "9px", color: "#555" }}>
-                  Date: ___________
-                </div>
-              </div>
-              <div
-                style={{
-                  flex: 1,
-                  border: "1px solid #ccc",
-                  padding: "5px 8px",
-                }}
-              >
-                <div
-                  style={{
-                    fontSize: "10px",
-                    fontWeight: "700",
-                    marginBottom: "2px",
-                    color: "#333",
-                  }}
-                >
-                  VERIFIED BY
-                </div>
-                <div
-                  style={{
-                    borderBottom: "1px solid #888",
-                    height: "18px",
-                    marginBottom: "6px",
-                  }}
-                />
-                <div style={{ fontSize: "9px", color: "#555" }}>
-                  Date: ___________
-                </div>
+                <p style={{ fontSize: "12px", margin: 0 }}>
+                  Date: _____________
+                </p>
               </div>
             </div>
           </div>
