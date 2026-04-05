@@ -371,6 +371,8 @@ export interface _SERVICE {
   'deleteUser': ActorMethod<[string], boolean>;
   'getAllUserRecords': ActorMethod<[], Array<UserRecord>>;
   'loginUser': ActorMethod<[string, string], [] | [UserRecord]>;
+  'setupInitialAdmin': ActorMethod<[string, string, string], boolean>;
+  'getUserCount': ActorMethod<[], bigint>;
   // Machines
   'saveMachine': ActorMethod<[Machine], undefined>;
   'deleteMachine': ActorMethod<[string], undefined>;

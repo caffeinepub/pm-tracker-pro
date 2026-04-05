@@ -374,6 +374,8 @@ export const idlService = IDL.Service({
   deleteUser: IDL.Func([IDL.Text], [IDL.Bool], []),
   getAllUserRecords: IDL.Func([], [IDL.Vec(UserRecord)], ['query']),
   loginUser: IDL.Func([IDL.Text, IDL.Text], [IDL.Opt(UserRecord)], ['query']),
+  setupInitialAdmin: IDL.Func([IDL.Text, IDL.Text, IDL.Text], [IDL.Bool], []),
+  getUserCount: IDL.Func([], [IDL.Nat], ['query']),
   saveMachine: IDL.Func([Machine], [], []),
   deleteMachine: IDL.Func([IDL.Text], [], []),
   getAllMachines: IDL.Func([], [IDL.Vec(Machine)], ['query']),

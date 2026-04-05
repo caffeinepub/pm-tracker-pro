@@ -430,6 +430,19 @@ actor {
 
   // ─── Username/Password User Management ───────────────────────────────────────
 
+
+  // Setup initial admin — only works when no users exist yet
+  public shared func setupInitialAdmin(username : Text, passwordHash : Text, name : Text) : async Bool {
+    if (userRecords.size() > 0) { return false };
+    userRecords.add(username, { username; passwordHash; name; role = "admin" });
+    true;
+  };
+
+  // Returns number of registered users (used by login page for first-run detection)
+  public query func getUserCount() : async Nat {
+    userRecords.size();
+  };
+
   public shared ({ caller }) func createUser(username : Text, passwordHash : Text, name : Text, role : Text) : async Bool {
     if (not (AccessControl.hasPermission(accessControlState, caller, #admin))) {
       Runtime.trap("Unauthorized: Only admins can create users");
