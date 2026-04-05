@@ -10,95 +10,449 @@ import type { ActorMethod } from '@icp-sdk/core/agent';
 import type { IDL } from '@icp-sdk/core/candid';
 import type { Principal } from '@icp-sdk/core/principal';
 
+export interface SpareUsed {
+  'spareName': string;
+  'partSpec': string;
+  'qty': number;
+  'unit': string;
+  'cost': number;
+}
+
 export interface ChecklistItem {
-  'id' : string,
-  'description' : string,
-  'itemType' : string,
+  'id': string;
+  'description': string;
+  'itemType': string;
 }
-export interface ChecklistResult {
-  'photoFilename' : string,
-  'remark' : string,
-  'itemId' : string,
-  'value' : string,
-}
+
 export interface ChecklistTemplate {
-  'id' : string,
-  'items' : Array<ChecklistItem>,
-  'machineType' : string,
+  'id': string;
+  'machineType': string;
+  'items': Array<ChecklistItem>;
 }
+
+export interface ChecklistResult {
+  'itemId': string;
+  'value': string;
+  'remark': string;
+  'photoFilename': string;
+}
+
 export interface Machine {
-  'id' : string,
-  'name' : string,
-  'department' : string,
-  'location' : string,
-  'machineType' : string,
+  'id': string;
+  'name': string;
+  'department': string;
+  'machineType': string;
+  'location': string;
+  'section': string;
+  'availableWorkingHours': number;
 }
-export type Order = { 'less' : null } |
-  { 'equal' : null } |
-  { 'greater' : null };
+
 export interface PMPlan {
-  'month' : bigint,
-  'checklistTemplateId' : string,
-  'frequency' : string,
-  'machineId' : string,
+  'id': string;
+  'machineId': string;
+  'month': bigint;
+  'frequency': string;
+  'checklistTemplateId': string;
+  'scheduledDate': string;
+  'notes': string;
 }
+
 export interface PMRecord {
-  'id' : string,
-  'completedDate' : bigint,
-  'status' : string,
-  'operatorName' : string,
-  'operatorId' : string,
-  'machineId' : string,
-  'checklistResults' : Array<ChecklistResult>,
+  'id': string;
+  'machineId': string;
+  'operatorId': string;
+  'operatorName': string;
+  'completedDate': bigint;
+  'checklistResults': Array<ChecklistResult>;
+  'status': string;
+  'spareUsed': Array<SpareUsed>;
+  'submittedAt': bigint;
 }
-export interface UserProfile { 'name' : string, 'role' : string }
-export type UserRole = { 'admin' : null } |
-  { 'user' : null } |
-  { 'guest' : null };
+
+export interface BreakdownRecord {
+  'id': string;
+  'machineId': string;
+  'machineName': string;
+  'date': string;
+  'startTime': string;
+  'endTime': string;
+  'durationMinutes': number;
+  'problemDescription': string;
+  'faultType': string;
+  'affectedPart': string;
+  'temporaryAction': string;
+  'breakdownType': string;
+  'operatorName': string;
+  'operatorUsername': string;
+  'status': string;
+  'isInCapa': boolean;
+  'isInHistory': boolean;
+  'adminRemarks': string;
+  'submittedAt': bigint;
+  'photoFilename': string;
+  'spareUsed': Array<SpareUsed>;
+}
+
+export interface CAPARecord {
+  'id': string;
+  'breakdownId': string;
+  'machineId': string;
+  'machineName': string;
+  'date': string;
+  'problemSummary': string;
+  'rootCause': string;
+  'temporaryAction': string;
+  'permanentAction': string;
+  'responsiblePerson': string;
+  'targetDate': string;
+  'status': string;
+  'createdAt': bigint;
+  'closedAt': bigint;
+}
+
+export interface HistoryCardEntry {
+  'id': string;
+  'machineId': string;
+  'machineName': string;
+  'date': string;
+  'eventType': string;
+  'durationMinutes': number;
+  'problemDescription': string;
+  'actionTaken': string;
+  'doneBy': string;
+  'remarks': string;
+  'sourceId': string;
+  'createdAt': bigint;
+}
+
+export interface SectionHoursConfig {
+  'section': string;
+  'availableProductionHrs': number;
+  'powerOff': number;
+}
+
+export interface SectionTargets {
+  'bdPct': number;
+  'mttr': number;
+  'mtbf': number;
+  'uptime': number;
+}
+
+export interface TaskStatusHistoryItem {
+  'status': string;
+  'changedBy': string;
+  'remark': string;
+  'photoFilename': string;
+  'timestamp': bigint;
+  'requiresApproval': boolean;
+  'approved': boolean;
+}
+
+export interface TaskRecord {
+  'id': string;
+  'title': string;
+  'description': string;
+  'priority': string;
+  'status': string;
+  'assignedTo': string;
+  'assignedByUsername': string;
+  'createdAt': bigint;
+  'dueDate': string;
+  'statusHistory': Array<TaskStatusHistoryItem>;
+  'lastUpdatedRemark': string;
+  'lastUpdatedPhoto': string;
+}
+
+export interface KaizenSpareItem {
+  'name': string;
+  'partNo': string;
+  'qty': string;
+  'unit': string;
+}
+
+export interface KaizenRecord {
+  'id': string;
+  'title': string;
+  'category': string;
+  'machineArea': string;
+  'problemDescription': string;
+  'improvementDescription': string;
+  'beforePhotoFilename': string;
+  'afterPhotoFilename': string;
+  'submittedBy': string;
+  'submittedByUsername': string;
+  'submittedAt': bigint;
+  'status': string;
+  'closedAt': bigint;
+  'closedRemarks': string;
+  'spares': Array<KaizenSpareItem>;
+  'approvedAt': bigint;
+  'rejectedAt': bigint;
+  'rejectionReason': string;
+  'adminRemarks': string;
+}
+
+export interface PredictivePlan {
+  'id': string;
+  'machineId': string;
+  'machineName': string;
+  'scheduledDate': string;
+  'frequency': string;
+  'parameters': Array<string>;
+  'notes': string;
+  'createdAt': bigint;
+}
+
+export interface PredictiveReading {
+  'paramName': string;
+  'value': string;
+}
+
+export interface PredictiveRecord {
+  'id': string;
+  'planId': string;
+  'machineId': string;
+  'machineName': string;
+  'date': string;
+  'readings': Array<PredictiveReading>;
+  'remarks': string;
+  'operatorName': string;
+  'operatorUsername': string;
+  'submittedAt': bigint;
+  'status': string;
+}
+
+export interface ElectricityMeter {
+  'id': string;
+  'name': string;
+  'unit': string;
+  'multiplier': number;
+  'location': string;
+  'includeInKpi': boolean;
+  'createdAt': bigint;
+}
+
+export interface MeterReading {
+  'id': string;
+  'meterId': string;
+  'meterName': string;
+  'date': string;
+  'time': string;
+  'reading': number;
+  'consumption': number;
+  'enteredBy': string;
+  'enteredByUsername': string;
+  'submittedAt': bigint;
+}
+
+export interface LogbookCheckItem {
+  'id': string;
+  'description': string;
+  'category': string;
+  'createdAt': bigint;
+}
+
+export interface LogbookItemEntry {
+  'checkItemId': string;
+  'description': string;
+  'status': string;
+  'remark': string;
+  'photoFilename': string;
+}
+
+export interface LogbookActivity {
+  'description': string;
+  'timeSpent': string;
+  'status': string;
+  'remarks': string;
+  'photoFilename': string;
+}
+
+export interface LogbookSpareUsed {
+  'spareName': string;
+  'qty': number;
+  'cost': number;
+}
+
+export interface LogbookEntry {
+  'id': string;
+  'date': string;
+  'operatorName': string;
+  'operatorUsername': string;
+  'items': Array<LogbookItemEntry>;
+  'generalRemarks': string;
+  'submittedAt': bigint;
+  'activities': Array<LogbookActivity>;
+  'spareUsed': Array<LogbookSpareUsed>;
+}
+
+export interface SpareItem {
+  'id': string;
+  'partName': string;
+  'partSpec': string;
+  'qtyInStock': number;
+  'minStockLevel': number;
+  'unit': string;
+  'costPerUnit': number;
+  'applicableMachineSection': string;
+  'createdAt': bigint;
+}
+
+export interface PMSpareUsage {
+  'id': string;
+  'machineId': string;
+  'machineName': string;
+  'date': string;
+  'spareUsed': Array<SpareUsed>;
+  'submittedBy': string;
+  'submittedByUsername': string;
+  'workType': string;
+  'submittedAt': bigint;
+}
+
+export interface AppNotification {
+  'id': string;
+  'message': string;
+  'timestamp': bigint;
+  'read': boolean;
+  'targetUsername': string;
+}
+
+export interface UserProfile { 'name': string; 'role': string; }
+
+export interface UserRecord {
+  'username': string;
+  'passwordHash': string;
+  'name': string;
+  'role': string;
+}
+
+export type UserRole = { 'admin': null } |
+  { 'user': null } |
+  { 'guest': null };
+
+export type Order = { 'less': null } |
+  { 'equal': null } |
+  { 'greater': null };
+
 export interface _CaffeineStorageCreateCertificateResult {
-  'method' : string,
-  'blob_hash' : string,
+  'method': string;
+  'blob_hash': string;
 }
 export interface _CaffeineStorageRefillInformation {
-  'proposed_top_up_amount' : [] | [bigint],
+  'proposed_top_up_amount': [] | [bigint];
 }
 export interface _CaffeineStorageRefillResult {
-  'success' : [] | [boolean],
-  'topped_up_amount' : [] | [bigint],
+  'success': [] | [boolean];
+  'topped_up_amount': [] | [bigint];
 }
+
 export interface _SERVICE {
-  '_caffeineStorageBlobIsLive' : ActorMethod<[Uint8Array], boolean>,
-  '_caffeineStorageBlobsToDelete' : ActorMethod<[], Array<Uint8Array>>,
-  '_caffeineStorageConfirmBlobDeletion' : ActorMethod<
-    [Array<Uint8Array>],
-    undefined
-  >,
-  '_caffeineStorageCreateCertificate' : ActorMethod<
-    [string],
-    _CaffeineStorageCreateCertificateResult
-  >,
-  '_caffeineStorageRefillCashier' : ActorMethod<
-    [[] | [_CaffeineStorageRefillInformation]],
-    _CaffeineStorageRefillResult
-  >,
-  '_caffeineStorageUpdateGatewayPrincipals' : ActorMethod<[], undefined>,
-  '_initializeAccessControlWithSecret' : ActorMethod<[string], undefined>,
-  'addChecklistTemplate' : ActorMethod<[ChecklistTemplate], undefined>,
-  'addMachine' : ActorMethod<[Machine], undefined>,
-  'addPMPlan' : ActorMethod<[PMPlan], undefined>,
-  'assignCallerUserRole' : ActorMethod<[Principal, UserRole], undefined>,
-  'compareText' : ActorMethod<[string, string], Order>,
-  'deleteMachine' : ActorMethod<[string], undefined>,
-  'getAllMachines' : ActorMethod<[], Array<Machine>>,
-  'getAllPMRecords' : ActorMethod<[], Array<PMRecord>>,
-  'getCallerUserProfile' : ActorMethod<[], [] | [UserProfile]>,
-  'getCallerUserRole' : ActorMethod<[], UserRole>,
-  'getChecklistTemplate' : ActorMethod<[string], ChecklistTemplate>,
-  'getTodaysPlan' : ActorMethod<[bigint], Array<PMPlan>>,
-  'getUserProfile' : ActorMethod<[Principal], [] | [UserProfile]>,
-  'isCallerAdmin' : ActorMethod<[], boolean>,
-  'saveCallerUserProfile' : ActorMethod<[UserProfile], undefined>,
-  'submitPMRecord' : ActorMethod<[PMRecord], undefined>,
+  // Storage
+  '_caffeineStorageBlobIsLive': ActorMethod<[Uint8Array], boolean>;
+  '_caffeineStorageBlobsToDelete': ActorMethod<[], Array<Uint8Array>>;
+  '_caffeineStorageConfirmBlobDeletion': ActorMethod<[Array<Uint8Array>], undefined>;
+  '_caffeineStorageCreateCertificate': ActorMethod<[string], _CaffeineStorageCreateCertificateResult>;
+  '_caffeineStorageRefillCashier': ActorMethod<[[] | [_CaffeineStorageRefillInformation]], _CaffeineStorageRefillResult>;
+  '_caffeineStorageUpdateGatewayPrincipals': ActorMethod<[], undefined>;
+  '_initializeAccessControlWithSecret': ActorMethod<[string], undefined>;
+  // Auth
+  'assignCallerUserRole': ActorMethod<[Principal, UserRole], undefined>;
+  'getCallerUserRole': ActorMethod<[], UserRole>;
+  'isCallerAdmin': ActorMethod<[], boolean>;
+  'isCallerAdminCheck': ActorMethod<[], boolean>;
+  'compareText': ActorMethod<[string, string], Order>;
+  // User Profiles
+  'getCallerUserProfile': ActorMethod<[], [] | [UserProfile]>;
+  'saveCallerUserProfile': ActorMethod<[UserProfile], undefined>;
+  // User Management
+  'createUser': ActorMethod<[string, string, string, string], boolean>;
+  'updateUser': ActorMethod<[string, string, string, string], boolean>;
+  'deleteUser': ActorMethod<[string], boolean>;
+  'getAllUserRecords': ActorMethod<[], Array<UserRecord>>;
+  'loginUser': ActorMethod<[string, string], [] | [UserRecord]>;
+  // Machines
+  'saveMachine': ActorMethod<[Machine], undefined>;
+  'deleteMachine': ActorMethod<[string], undefined>;
+  'getAllMachines': ActorMethod<[], Array<Machine>>;
+  'setPrioritizedMachines': ActorMethod<[Array<string>], undefined>;
+  'getPrioritizedMachines': ActorMethod<[], Array<string>>;
+  // Checklist Templates
+  'saveChecklistTemplate': ActorMethod<[ChecklistTemplate], undefined>;
+  'deleteChecklistTemplate': ActorMethod<[string], undefined>;
+  'getAllChecklistTemplates': ActorMethod<[], Array<ChecklistTemplate>>;
+  // PM Plans
+  'savePMPlan': ActorMethod<[PMPlan], undefined>;
+  'deletePMPlan': ActorMethod<[string], undefined>;
+  'getAllPMPlans': ActorMethod<[], Array<PMPlan>>;
+  // PM Records
+  'savePMRecord': ActorMethod<[PMRecord], undefined>;
+  'deletePMRecord': ActorMethod<[string], undefined>;
+  'getAllPMRecords': ActorMethod<[], Array<PMRecord>>;
+  // Breakdown Records
+  'saveBreakdownRecord': ActorMethod<[BreakdownRecord], undefined>;
+  'deleteBreakdownRecord': ActorMethod<[string], undefined>;
+  'getAllBreakdownRecords': ActorMethod<[], Array<BreakdownRecord>>;
+  // CAPA Records
+  'saveCAPARecord': ActorMethod<[CAPARecord], undefined>;
+  'deleteCAPARecord': ActorMethod<[string], undefined>;
+  'getAllCAPARecords': ActorMethod<[], Array<CAPARecord>>;
+  // History Entries
+  'saveHistoryEntry': ActorMethod<[HistoryCardEntry], undefined>;
+  'deleteHistoryEntry': ActorMethod<[string], undefined>;
+  'getAllHistoryEntries': ActorMethod<[], Array<HistoryCardEntry>>;
+  // Section Hours
+  'saveSectionHoursConfig': ActorMethod<[SectionHoursConfig], undefined>;
+  'getAllSectionHoursConfigs': ActorMethod<[], Array<SectionHoursConfig>>;
+  // BD Targets
+  'saveBDTarget': ActorMethod<[string, SectionTargets], undefined>;
+  'getAllBDTargets': ActorMethod<[], Array<[string, SectionTargets]>>;
+  // Tasks
+  'saveTaskRecord': ActorMethod<[TaskRecord], undefined>;
+  'deleteTaskRecord': ActorMethod<[string], undefined>;
+  'getAllTaskRecords': ActorMethod<[], Array<TaskRecord>>;
+  // Kaizen
+  'saveKaizenRecord': ActorMethod<[KaizenRecord], undefined>;
+  'deleteKaizenRecord': ActorMethod<[string], undefined>;
+  'getAllKaizenRecords': ActorMethod<[], Array<KaizenRecord>>;
+  // Predictive Plans
+  'savePredictivePlan': ActorMethod<[PredictivePlan], undefined>;
+  'deletePredictivePlan': ActorMethod<[string], undefined>;
+  'getAllPredictivePlans': ActorMethod<[], Array<PredictivePlan>>;
+  // Predictive Records
+  'savePredictiveRecord': ActorMethod<[PredictiveRecord], undefined>;
+  'deletePredictiveRecord': ActorMethod<[string], undefined>;
+  'getAllPredictiveRecords': ActorMethod<[], Array<PredictiveRecord>>;
+  // Electricity Meters
+  'saveElectricityMeter': ActorMethod<[ElectricityMeter], undefined>;
+  'deleteElectricityMeter': ActorMethod<[string], undefined>;
+  'getAllElectricityMeters': ActorMethod<[], Array<ElectricityMeter>>;
+  // Meter Readings
+  'saveMeterReading': ActorMethod<[MeterReading], undefined>;
+  'deleteMeterReading': ActorMethod<[string], undefined>;
+  'getAllMeterReadings': ActorMethod<[], Array<MeterReading>>;
+  // Logbook Check Items
+  'saveLogbookCheckItem': ActorMethod<[LogbookCheckItem], undefined>;
+  'deleteLogbookCheckItem': ActorMethod<[string], undefined>;
+  'getAllLogbookCheckItems': ActorMethod<[], Array<LogbookCheckItem>>;
+  // Logbook Entries
+  'saveLogbookEntry': ActorMethod<[LogbookEntry], undefined>;
+  'deleteLogbookEntry': ActorMethod<[string], undefined>;
+  'getAllLogbookEntries': ActorMethod<[], Array<LogbookEntry>>;
+  // Spare Items
+  'saveSpareItem': ActorMethod<[SpareItem], undefined>;
+  'deleteSpareItem': ActorMethod<[string], undefined>;
+  'getAllSpareItems': ActorMethod<[], Array<SpareItem>>;
+  // PM Spare Usage
+  'savePMSpareUsage': ActorMethod<[PMSpareUsage], undefined>;
+  'deletePMSpareUsage': ActorMethod<[string], undefined>;
+  'getAllPMSpareUsage': ActorMethod<[], Array<PMSpareUsage>>;
+  // Notifications
+  'saveNotification': ActorMethod<[AppNotification], undefined>;
+  'markNotificationRead': ActorMethod<[string], undefined>;
+  'getAllNotifications': ActorMethod<[], Array<AppNotification>>;
+  // Admin
+  'clearAllData': ActorMethod<[], undefined>;
 }
 export declare const idlService: IDL.ServiceClass;
 export declare const idlInitArgs: IDL.Type[];

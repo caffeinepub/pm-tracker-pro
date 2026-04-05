@@ -8,234 +8,437 @@
 
 import { IDL } from '@icp-sdk/core/candid';
 
-export const _CaffeineStorageCreateCertificateResult = IDL.Record({
-  'method' : IDL.Text,
-  'blob_hash' : IDL.Text,
+const SpareUsed = IDL.Record({
+  spareName: IDL.Text,
+  partSpec: IDL.Text,
+  qty: IDL.Float64,
+  unit: IDL.Text,
+  cost: IDL.Float64,
 });
-export const _CaffeineStorageRefillInformation = IDL.Record({
-  'proposed_top_up_amount' : IDL.Opt(IDL.Nat),
+
+const ChecklistItem = IDL.Record({
+  id: IDL.Text,
+  description: IDL.Text,
+  itemType: IDL.Text,
 });
-export const _CaffeineStorageRefillResult = IDL.Record({
-  'success' : IDL.Opt(IDL.Bool),
-  'topped_up_amount' : IDL.Opt(IDL.Nat),
+
+const ChecklistTemplate = IDL.Record({
+  id: IDL.Text,
+  machineType: IDL.Text,
+  items: IDL.Vec(ChecklistItem),
 });
-export const ChecklistItem = IDL.Record({
-  'id' : IDL.Text,
-  'description' : IDL.Text,
-  'itemType' : IDL.Text,
+
+const ChecklistResult = IDL.Record({
+  itemId: IDL.Text,
+  value: IDL.Text,
+  remark: IDL.Text,
+  photoFilename: IDL.Text,
 });
-export const ChecklistTemplate = IDL.Record({
-  'id' : IDL.Text,
-  'items' : IDL.Vec(ChecklistItem),
-  'machineType' : IDL.Text,
+
+const Machine = IDL.Record({
+  id: IDL.Text,
+  name: IDL.Text,
+  department: IDL.Text,
+  machineType: IDL.Text,
+  location: IDL.Text,
+  section: IDL.Text,
+  availableWorkingHours: IDL.Float64,
 });
-export const Machine = IDL.Record({
-  'id' : IDL.Text,
-  'name' : IDL.Text,
-  'department' : IDL.Text,
-  'location' : IDL.Text,
-  'machineType' : IDL.Text,
+
+const PMPlan = IDL.Record({
+  id: IDL.Text,
+  machineId: IDL.Text,
+  month: IDL.Nat,
+  frequency: IDL.Text,
+  checklistTemplateId: IDL.Text,
+  scheduledDate: IDL.Text,
+  notes: IDL.Text,
 });
-export const PMPlan = IDL.Record({
-  'month' : IDL.Nat,
-  'checklistTemplateId' : IDL.Text,
-  'frequency' : IDL.Text,
-  'machineId' : IDL.Text,
+
+const PMRecord = IDL.Record({
+  id: IDL.Text,
+  machineId: IDL.Text,
+  operatorId: IDL.Text,
+  operatorName: IDL.Text,
+  completedDate: IDL.Int,
+  checklistResults: IDL.Vec(ChecklistResult),
+  status: IDL.Text,
+  spareUsed: IDL.Vec(SpareUsed),
+  submittedAt: IDL.Int,
 });
-export const UserRole = IDL.Variant({
-  'admin' : IDL.Null,
-  'user' : IDL.Null,
-  'guest' : IDL.Null,
+
+const BreakdownRecord = IDL.Record({
+  id: IDL.Text,
+  machineId: IDL.Text,
+  machineName: IDL.Text,
+  date: IDL.Text,
+  startTime: IDL.Text,
+  endTime: IDL.Text,
+  durationMinutes: IDL.Float64,
+  problemDescription: IDL.Text,
+  faultType: IDL.Text,
+  affectedPart: IDL.Text,
+  temporaryAction: IDL.Text,
+  breakdownType: IDL.Text,
+  operatorName: IDL.Text,
+  operatorUsername: IDL.Text,
+  status: IDL.Text,
+  isInCapa: IDL.Bool,
+  isInHistory: IDL.Bool,
+  adminRemarks: IDL.Text,
+  submittedAt: IDL.Int,
+  photoFilename: IDL.Text,
+  spareUsed: IDL.Vec(SpareUsed),
 });
-export const Order = IDL.Variant({
-  'less' : IDL.Null,
-  'equal' : IDL.Null,
-  'greater' : IDL.Null,
+
+const CAPARecord = IDL.Record({
+  id: IDL.Text,
+  breakdownId: IDL.Text,
+  machineId: IDL.Text,
+  machineName: IDL.Text,
+  date: IDL.Text,
+  problemSummary: IDL.Text,
+  rootCause: IDL.Text,
+  temporaryAction: IDL.Text,
+  permanentAction: IDL.Text,
+  responsiblePerson: IDL.Text,
+  targetDate: IDL.Text,
+  status: IDL.Text,
+  createdAt: IDL.Int,
+  closedAt: IDL.Int,
 });
-export const ChecklistResult = IDL.Record({
-  'photoFilename' : IDL.Text,
-  'remark' : IDL.Text,
-  'itemId' : IDL.Text,
-  'value' : IDL.Text,
+
+const HistoryCardEntry = IDL.Record({
+  id: IDL.Text,
+  machineId: IDL.Text,
+  machineName: IDL.Text,
+  date: IDL.Text,
+  eventType: IDL.Text,
+  durationMinutes: IDL.Float64,
+  problemDescription: IDL.Text,
+  actionTaken: IDL.Text,
+  doneBy: IDL.Text,
+  remarks: IDL.Text,
+  sourceId: IDL.Text,
+  createdAt: IDL.Int,
 });
-export const PMRecord = IDL.Record({
-  'id' : IDL.Text,
-  'completedDate' : IDL.Int,
-  'status' : IDL.Text,
-  'operatorName' : IDL.Text,
-  'operatorId' : IDL.Text,
-  'machineId' : IDL.Text,
-  'checklistResults' : IDL.Vec(ChecklistResult),
+
+const SectionHoursConfig = IDL.Record({
+  section: IDL.Text,
+  availableProductionHrs: IDL.Float64,
+  powerOff: IDL.Float64,
 });
-export const UserProfile = IDL.Record({ 'name' : IDL.Text, 'role' : IDL.Text });
+
+const SectionTargets = IDL.Record({
+  bdPct: IDL.Float64,
+  mttr: IDL.Float64,
+  mtbf: IDL.Float64,
+  uptime: IDL.Float64,
+});
+
+const TaskStatusHistoryItem = IDL.Record({
+  status: IDL.Text,
+  changedBy: IDL.Text,
+  remark: IDL.Text,
+  photoFilename: IDL.Text,
+  timestamp: IDL.Int,
+  requiresApproval: IDL.Bool,
+  approved: IDL.Bool,
+});
+
+const TaskRecord = IDL.Record({
+  id: IDL.Text,
+  title: IDL.Text,
+  description: IDL.Text,
+  priority: IDL.Text,
+  status: IDL.Text,
+  assignedTo: IDL.Text,
+  assignedByUsername: IDL.Text,
+  createdAt: IDL.Int,
+  dueDate: IDL.Text,
+  statusHistory: IDL.Vec(TaskStatusHistoryItem),
+  lastUpdatedRemark: IDL.Text,
+  lastUpdatedPhoto: IDL.Text,
+});
+
+const KaizenSpareItem = IDL.Record({
+  name: IDL.Text,
+  partNo: IDL.Text,
+  qty: IDL.Text,
+  unit: IDL.Text,
+});
+
+const KaizenRecord = IDL.Record({
+  id: IDL.Text,
+  title: IDL.Text,
+  category: IDL.Text,
+  machineArea: IDL.Text,
+  problemDescription: IDL.Text,
+  improvementDescription: IDL.Text,
+  beforePhotoFilename: IDL.Text,
+  afterPhotoFilename: IDL.Text,
+  submittedBy: IDL.Text,
+  submittedByUsername: IDL.Text,
+  submittedAt: IDL.Int,
+  status: IDL.Text,
+  closedAt: IDL.Int,
+  closedRemarks: IDL.Text,
+  spares: IDL.Vec(KaizenSpareItem),
+  approvedAt: IDL.Int,
+  rejectedAt: IDL.Int,
+  rejectionReason: IDL.Text,
+  adminRemarks: IDL.Text,
+});
+
+const PredictivePlan = IDL.Record({
+  id: IDL.Text,
+  machineId: IDL.Text,
+  machineName: IDL.Text,
+  scheduledDate: IDL.Text,
+  frequency: IDL.Text,
+  parameters: IDL.Vec(IDL.Text),
+  notes: IDL.Text,
+  createdAt: IDL.Int,
+});
+
+const PredictiveReading = IDL.Record({
+  paramName: IDL.Text,
+  value: IDL.Text,
+});
+
+const PredictiveRecord = IDL.Record({
+  id: IDL.Text,
+  planId: IDL.Text,
+  machineId: IDL.Text,
+  machineName: IDL.Text,
+  date: IDL.Text,
+  readings: IDL.Vec(PredictiveReading),
+  remarks: IDL.Text,
+  operatorName: IDL.Text,
+  operatorUsername: IDL.Text,
+  submittedAt: IDL.Int,
+  status: IDL.Text,
+});
+
+const ElectricityMeter = IDL.Record({
+  id: IDL.Text,
+  name: IDL.Text,
+  unit: IDL.Text,
+  multiplier: IDL.Float64,
+  location: IDL.Text,
+  includeInKpi: IDL.Bool,
+  createdAt: IDL.Int,
+});
+
+const MeterReading = IDL.Record({
+  id: IDL.Text,
+  meterId: IDL.Text,
+  meterName: IDL.Text,
+  date: IDL.Text,
+  time: IDL.Text,
+  reading: IDL.Float64,
+  consumption: IDL.Float64,
+  enteredBy: IDL.Text,
+  enteredByUsername: IDL.Text,
+  submittedAt: IDL.Int,
+});
+
+const LogbookCheckItem = IDL.Record({
+  id: IDL.Text,
+  description: IDL.Text,
+  category: IDL.Text,
+  createdAt: IDL.Int,
+});
+
+const LogbookItemEntry = IDL.Record({
+  checkItemId: IDL.Text,
+  description: IDL.Text,
+  status: IDL.Text,
+  remark: IDL.Text,
+  photoFilename: IDL.Text,
+});
+
+const LogbookActivity = IDL.Record({
+  description: IDL.Text,
+  timeSpent: IDL.Text,
+  status: IDL.Text,
+  remarks: IDL.Text,
+  photoFilename: IDL.Text,
+});
+
+const LogbookSpareUsed = IDL.Record({
+  spareName: IDL.Text,
+  qty: IDL.Float64,
+  cost: IDL.Float64,
+});
+
+const LogbookEntry = IDL.Record({
+  id: IDL.Text,
+  date: IDL.Text,
+  operatorName: IDL.Text,
+  operatorUsername: IDL.Text,
+  items: IDL.Vec(LogbookItemEntry),
+  generalRemarks: IDL.Text,
+  submittedAt: IDL.Int,
+  activities: IDL.Vec(LogbookActivity),
+  spareUsed: IDL.Vec(LogbookSpareUsed),
+});
+
+const SpareItem = IDL.Record({
+  id: IDL.Text,
+  partName: IDL.Text,
+  partSpec: IDL.Text,
+  qtyInStock: IDL.Float64,
+  minStockLevel: IDL.Float64,
+  unit: IDL.Text,
+  costPerUnit: IDL.Float64,
+  applicableMachineSection: IDL.Text,
+  createdAt: IDL.Int,
+});
+
+const PMSpareUsage = IDL.Record({
+  id: IDL.Text,
+  machineId: IDL.Text,
+  machineName: IDL.Text,
+  date: IDL.Text,
+  spareUsed: IDL.Vec(SpareUsed),
+  submittedBy: IDL.Text,
+  submittedByUsername: IDL.Text,
+  workType: IDL.Text,
+  submittedAt: IDL.Int,
+});
+
+const AppNotification = IDL.Record({
+  id: IDL.Text,
+  message: IDL.Text,
+  timestamp: IDL.Int,
+  read: IDL.Bool,
+  targetUsername: IDL.Text,
+});
+
+const UserProfile = IDL.Record({
+  name: IDL.Text,
+  role: IDL.Text,
+});
+
+const UserRecord = IDL.Record({
+  username: IDL.Text,
+  passwordHash: IDL.Text,
+  name: IDL.Text,
+  role: IDL.Text,
+});
+
+const UserRole = IDL.Variant({
+  admin: IDL.Null,
+  user: IDL.Null,
+  guest: IDL.Null,
+});
+
+const Order = IDL.Variant({
+  less: IDL.Null,
+  equal: IDL.Null,
+  greater: IDL.Null,
+});
+
+const _CaffeineStorageCreateCertificateResult = IDL.Record({
+  method: IDL.Text,
+  blob_hash: IDL.Text,
+});
+
+const _CaffeineStorageRefillInformation = IDL.Record({
+  proposed_top_up_amount: IDL.Opt(IDL.Nat),
+});
+
+const _CaffeineStorageRefillResult = IDL.Record({
+  success: IDL.Opt(IDL.Bool),
+  topped_up_amount: IDL.Opt(IDL.Nat),
+});
 
 export const idlService = IDL.Service({
-  '_caffeineStorageBlobIsLive' : IDL.Func(
-      [IDL.Vec(IDL.Nat8)],
-      [IDL.Bool],
-      ['query'],
-    ),
-  '_caffeineStorageBlobsToDelete' : IDL.Func(
-      [],
-      [IDL.Vec(IDL.Vec(IDL.Nat8))],
-      ['query'],
-    ),
-  '_caffeineStorageConfirmBlobDeletion' : IDL.Func(
-      [IDL.Vec(IDL.Vec(IDL.Nat8))],
-      [],
-      [],
-    ),
-  '_caffeineStorageCreateCertificate' : IDL.Func(
-      [IDL.Text],
-      [_CaffeineStorageCreateCertificateResult],
-      [],
-    ),
-  '_caffeineStorageRefillCashier' : IDL.Func(
-      [IDL.Opt(_CaffeineStorageRefillInformation)],
-      [_CaffeineStorageRefillResult],
-      [],
-    ),
-  '_caffeineStorageUpdateGatewayPrincipals' : IDL.Func([], [], []),
-  '_initializeAccessControlWithSecret' : IDL.Func([IDL.Text], [], []),
-  'addChecklistTemplate' : IDL.Func([ChecklistTemplate], [], []),
-  'addMachine' : IDL.Func([Machine], [], []),
-  'addPMPlan' : IDL.Func([PMPlan], [], []),
-  'assignCallerUserRole' : IDL.Func([IDL.Principal, UserRole], [], []),
-  'compareText' : IDL.Func([IDL.Text, IDL.Text], [Order], ['query']),
-  'deleteMachine' : IDL.Func([IDL.Text], [], []),
-  'getAllMachines' : IDL.Func([], [IDL.Vec(Machine)], ['query']),
-  'getAllPMRecords' : IDL.Func([], [IDL.Vec(PMRecord)], ['query']),
-  'getCallerUserProfile' : IDL.Func([], [IDL.Opt(UserProfile)], ['query']),
-  'getCallerUserRole' : IDL.Func([], [UserRole], ['query']),
-  'getChecklistTemplate' : IDL.Func([IDL.Text], [ChecklistTemplate], ['query']),
-  'getTodaysPlan' : IDL.Func([IDL.Nat], [IDL.Vec(PMPlan)], ['query']),
-  'getUserProfile' : IDL.Func(
-      [IDL.Principal],
-      [IDL.Opt(UserProfile)],
-      ['query'],
-    ),
-  'isCallerAdmin' : IDL.Func([], [IDL.Bool], ['query']),
-  'saveCallerUserProfile' : IDL.Func([UserProfile], [], []),
-  'submitPMRecord' : IDL.Func([PMRecord], [], []),
+  _caffeineStorageBlobIsLive: IDL.Func([IDL.Vec(IDL.Nat8)], [IDL.Bool], ['query']),
+  _caffeineStorageBlobsToDelete: IDL.Func([], [IDL.Vec(IDL.Vec(IDL.Nat8))], ['query']),
+  _caffeineStorageConfirmBlobDeletion: IDL.Func([IDL.Vec(IDL.Vec(IDL.Nat8))], [], []),
+  _caffeineStorageCreateCertificate: IDL.Func([IDL.Text], [_CaffeineStorageCreateCertificateResult], []),
+  _caffeineStorageRefillCashier: IDL.Func([IDL.Opt(_CaffeineStorageRefillInformation)], [_CaffeineStorageRefillResult], []),
+  _caffeineStorageUpdateGatewayPrincipals: IDL.Func([], [], []),
+  _initializeAccessControlWithSecret: IDL.Func([IDL.Text], [], []),
+  assignCallerUserRole: IDL.Func([IDL.Principal, UserRole], [], []),
+  getCallerUserRole: IDL.Func([], [UserRole], ['query']),
+  isCallerAdmin: IDL.Func([], [IDL.Bool], ['query']),
+  isCallerAdminCheck: IDL.Func([], [IDL.Bool], ['query']),
+  compareText: IDL.Func([IDL.Text, IDL.Text], [Order], ['query']),
+  getCallerUserProfile: IDL.Func([], [IDL.Opt(UserProfile)], ['query']),
+  saveCallerUserProfile: IDL.Func([UserProfile], [], []),
+  createUser: IDL.Func([IDL.Text, IDL.Text, IDL.Text, IDL.Text], [IDL.Bool], []),
+  updateUser: IDL.Func([IDL.Text, IDL.Text, IDL.Text, IDL.Text], [IDL.Bool], []),
+  deleteUser: IDL.Func([IDL.Text], [IDL.Bool], []),
+  getAllUserRecords: IDL.Func([], [IDL.Vec(UserRecord)], ['query']),
+  loginUser: IDL.Func([IDL.Text, IDL.Text], [IDL.Opt(UserRecord)], ['query']),
+  saveMachine: IDL.Func([Machine], [], []),
+  deleteMachine: IDL.Func([IDL.Text], [], []),
+  getAllMachines: IDL.Func([], [IDL.Vec(Machine)], ['query']),
+  setPrioritizedMachines: IDL.Func([IDL.Vec(IDL.Text)], [], []),
+  getPrioritizedMachines: IDL.Func([], [IDL.Vec(IDL.Text)], ['query']),
+  saveChecklistTemplate: IDL.Func([ChecklistTemplate], [], []),
+  deleteChecklistTemplate: IDL.Func([IDL.Text], [], []),
+  getAllChecklistTemplates: IDL.Func([], [IDL.Vec(ChecklistTemplate)], ['query']),
+  savePMPlan: IDL.Func([PMPlan], [], []),
+  deletePMPlan: IDL.Func([IDL.Text], [], []),
+  getAllPMPlans: IDL.Func([], [IDL.Vec(PMPlan)], ['query']),
+  savePMRecord: IDL.Func([PMRecord], [], []),
+  deletePMRecord: IDL.Func([IDL.Text], [], []),
+  getAllPMRecords: IDL.Func([], [IDL.Vec(PMRecord)], ['query']),
+  saveBreakdownRecord: IDL.Func([BreakdownRecord], [], []),
+  deleteBreakdownRecord: IDL.Func([IDL.Text], [], []),
+  getAllBreakdownRecords: IDL.Func([], [IDL.Vec(BreakdownRecord)], ['query']),
+  saveCAPARecord: IDL.Func([CAPARecord], [], []),
+  deleteCAPARecord: IDL.Func([IDL.Text], [], []),
+  getAllCAPARecords: IDL.Func([], [IDL.Vec(CAPARecord)], ['query']),
+  saveHistoryEntry: IDL.Func([HistoryCardEntry], [], []),
+  deleteHistoryEntry: IDL.Func([IDL.Text], [], []),
+  getAllHistoryEntries: IDL.Func([], [IDL.Vec(HistoryCardEntry)], ['query']),
+  saveSectionHoursConfig: IDL.Func([SectionHoursConfig], [], []),
+  getAllSectionHoursConfigs: IDL.Func([], [IDL.Vec(SectionHoursConfig)], ['query']),
+  saveBDTarget: IDL.Func([IDL.Text, SectionTargets], [], []),
+  getAllBDTargets: IDL.Func([], [IDL.Vec(IDL.Tuple(IDL.Text, SectionTargets))], ['query']),
+  saveTaskRecord: IDL.Func([TaskRecord], [], []),
+  deleteTaskRecord: IDL.Func([IDL.Text], [], []),
+  getAllTaskRecords: IDL.Func([], [IDL.Vec(TaskRecord)], ['query']),
+  saveKaizenRecord: IDL.Func([KaizenRecord], [], []),
+  deleteKaizenRecord: IDL.Func([IDL.Text], [], []),
+  getAllKaizenRecords: IDL.Func([], [IDL.Vec(KaizenRecord)], ['query']),
+  savePredictivePlan: IDL.Func([PredictivePlan], [], []),
+  deletePredictivePlan: IDL.Func([IDL.Text], [], []),
+  getAllPredictivePlans: IDL.Func([], [IDL.Vec(PredictivePlan)], ['query']),
+  savePredictiveRecord: IDL.Func([PredictiveRecord], [], []),
+  deletePredictiveRecord: IDL.Func([IDL.Text], [], []),
+  getAllPredictiveRecords: IDL.Func([], [IDL.Vec(PredictiveRecord)], ['query']),
+  saveElectricityMeter: IDL.Func([ElectricityMeter], [], []),
+  deleteElectricityMeter: IDL.Func([IDL.Text], [], []),
+  getAllElectricityMeters: IDL.Func([], [IDL.Vec(ElectricityMeter)], ['query']),
+  saveMeterReading: IDL.Func([MeterReading], [], []),
+  deleteMeterReading: IDL.Func([IDL.Text], [], []),
+  getAllMeterReadings: IDL.Func([], [IDL.Vec(MeterReading)], ['query']),
+  saveLogbookCheckItem: IDL.Func([LogbookCheckItem], [], []),
+  deleteLogbookCheckItem: IDL.Func([IDL.Text], [], []),
+  getAllLogbookCheckItems: IDL.Func([], [IDL.Vec(LogbookCheckItem)], ['query']),
+  saveLogbookEntry: IDL.Func([LogbookEntry], [], []),
+  deleteLogbookEntry: IDL.Func([IDL.Text], [], []),
+  getAllLogbookEntries: IDL.Func([], [IDL.Vec(LogbookEntry)], ['query']),
+  saveSpareItem: IDL.Func([SpareItem], [], []),
+  deleteSpareItem: IDL.Func([IDL.Text], [], []),
+  getAllSpareItems: IDL.Func([], [IDL.Vec(SpareItem)], ['query']),
+  savePMSpareUsage: IDL.Func([PMSpareUsage], [], []),
+  deletePMSpareUsage: IDL.Func([IDL.Text], [], []),
+  getAllPMSpareUsage: IDL.Func([], [IDL.Vec(PMSpareUsage)], ['query']),
+  saveNotification: IDL.Func([AppNotification], [], []),
+  markNotificationRead: IDL.Func([IDL.Text], [], []),
+  getAllNotifications: IDL.Func([], [IDL.Vec(AppNotification)], ['query']),
+  clearAllData: IDL.Func([], [], []),
 });
 
 export const idlInitArgs = [];
 
-export const idlFactory = ({ IDL }) => {
-  const _CaffeineStorageCreateCertificateResult = IDL.Record({
-    'method' : IDL.Text,
-    'blob_hash' : IDL.Text,
-  });
-  const _CaffeineStorageRefillInformation = IDL.Record({
-    'proposed_top_up_amount' : IDL.Opt(IDL.Nat),
-  });
-  const _CaffeineStorageRefillResult = IDL.Record({
-    'success' : IDL.Opt(IDL.Bool),
-    'topped_up_amount' : IDL.Opt(IDL.Nat),
-  });
-  const ChecklistItem = IDL.Record({
-    'id' : IDL.Text,
-    'description' : IDL.Text,
-    'itemType' : IDL.Text,
-  });
-  const ChecklistTemplate = IDL.Record({
-    'id' : IDL.Text,
-    'items' : IDL.Vec(ChecklistItem),
-    'machineType' : IDL.Text,
-  });
-  const Machine = IDL.Record({
-    'id' : IDL.Text,
-    'name' : IDL.Text,
-    'department' : IDL.Text,
-    'location' : IDL.Text,
-    'machineType' : IDL.Text,
-  });
-  const PMPlan = IDL.Record({
-    'month' : IDL.Nat,
-    'checklistTemplateId' : IDL.Text,
-    'frequency' : IDL.Text,
-    'machineId' : IDL.Text,
-  });
-  const UserRole = IDL.Variant({
-    'admin' : IDL.Null,
-    'user' : IDL.Null,
-    'guest' : IDL.Null,
-  });
-  const Order = IDL.Variant({
-    'less' : IDL.Null,
-    'equal' : IDL.Null,
-    'greater' : IDL.Null,
-  });
-  const ChecklistResult = IDL.Record({
-    'photoFilename' : IDL.Text,
-    'remark' : IDL.Text,
-    'itemId' : IDL.Text,
-    'value' : IDL.Text,
-  });
-  const PMRecord = IDL.Record({
-    'id' : IDL.Text,
-    'completedDate' : IDL.Int,
-    'status' : IDL.Text,
-    'operatorName' : IDL.Text,
-    'operatorId' : IDL.Text,
-    'machineId' : IDL.Text,
-    'checklistResults' : IDL.Vec(ChecklistResult),
-  });
-  const UserProfile = IDL.Record({ 'name' : IDL.Text, 'role' : IDL.Text });
-  
-  return IDL.Service({
-    '_caffeineStorageBlobIsLive' : IDL.Func(
-        [IDL.Vec(IDL.Nat8)],
-        [IDL.Bool],
-        ['query'],
-      ),
-    '_caffeineStorageBlobsToDelete' : IDL.Func(
-        [],
-        [IDL.Vec(IDL.Vec(IDL.Nat8))],
-        ['query'],
-      ),
-    '_caffeineStorageConfirmBlobDeletion' : IDL.Func(
-        [IDL.Vec(IDL.Vec(IDL.Nat8))],
-        [],
-        [],
-      ),
-    '_caffeineStorageCreateCertificate' : IDL.Func(
-        [IDL.Text],
-        [_CaffeineStorageCreateCertificateResult],
-        [],
-      ),
-    '_caffeineStorageRefillCashier' : IDL.Func(
-        [IDL.Opt(_CaffeineStorageRefillInformation)],
-        [_CaffeineStorageRefillResult],
-        [],
-      ),
-    '_caffeineStorageUpdateGatewayPrincipals' : IDL.Func([], [], []),
-    '_initializeAccessControlWithSecret' : IDL.Func([IDL.Text], [], []),
-    'addChecklistTemplate' : IDL.Func([ChecklistTemplate], [], []),
-    'addMachine' : IDL.Func([Machine], [], []),
-    'addPMPlan' : IDL.Func([PMPlan], [], []),
-    'assignCallerUserRole' : IDL.Func([IDL.Principal, UserRole], [], []),
-    'compareText' : IDL.Func([IDL.Text, IDL.Text], [Order], ['query']),
-    'deleteMachine' : IDL.Func([IDL.Text], [], []),
-    'getAllMachines' : IDL.Func([], [IDL.Vec(Machine)], ['query']),
-    'getAllPMRecords' : IDL.Func([], [IDL.Vec(PMRecord)], ['query']),
-    'getCallerUserProfile' : IDL.Func([], [IDL.Opt(UserProfile)], ['query']),
-    'getCallerUserRole' : IDL.Func([], [UserRole], ['query']),
-    'getChecklistTemplate' : IDL.Func(
-        [IDL.Text],
-        [ChecklistTemplate],
-        ['query'],
-      ),
-    'getTodaysPlan' : IDL.Func([IDL.Nat], [IDL.Vec(PMPlan)], ['query']),
-    'getUserProfile' : IDL.Func(
-        [IDL.Principal],
-        [IDL.Opt(UserProfile)],
-        ['query'],
-      ),
-    'isCallerAdmin' : IDL.Func([], [IDL.Bool], ['query']),
-    'saveCallerUserProfile' : IDL.Func([UserProfile], [], []),
-    'submitPMRecord' : IDL.Func([PMRecord], [], []),
-  });
-};
+export const idlFactory = ({ IDL: _IDL }) => idlService;
 
-export const init = ({ IDL }) => { return []; };
+export const init = ({ IDL: _IDL }) => idlInitArgs;

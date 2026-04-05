@@ -1,26 +1,59 @@
-# Plant Maintenance Management System
+# Plant Maintenance Management System — ICP Backend Migration
 
 ## Current State
-All modules (Predictive, PM, Breakdown, Kaizen, Task, Electricity, Logbook, Spares, CAPA) are functional. Data is stored in localStorage via AppContext. Demo data exists only for PM module (machines, plans, checklist templates, 1 PM record).
+
+The app is a fully-featured industrial maintenance management system (PMMS) hosted on ICP. All application data is currently stored in **browser localStorage** under keys prefixed with `pm_tracker_*`. This means:
+- Data is device-specific, not shared across users or devices
+- No true multi-user support (each browser has its own isolated data)
+- Storage is limited to ~5-10MB per browser
+- Data is lost if browser storage is cleared
+
+The backend canister currently only handles: machine master, checklist templates, PM plans, PM records, and authorization/blob-storage mixins.
+
+All other data modules (Breakdown, CAPA, History Cards, Predictive, Tasks, Kaizen, Electricity, Logbook, Spares, Users, Analysis targets) live entirely in localStorage via `AppContext.tsx`.
 
 ## Requested Changes (Diff)
 
 ### Add
-- Block operator re-submission on predictive maintenance records once a reading is submitted for a given schedule+period. Show 'Already Submitted' indicator and disable the submit button for operators.
-- Admin can edit predictive records after submission (edit mode in the records table).
-- 5 sample entries in EVERY module: machines, PM plans, PM records, breakdown records, CAPA records, history cards, predictive plans, predictive records, kaizen records, task records, electricity meters + readings, logbook entries, spare items. Sample data must be loaded into localStorage as initial state if no data already exists.
-- The same 'submitted = lock for operator, editable for admin' pattern must be applied consistently across ALL modules where submissions exist: PM checklists, breakdown slips, kaizen, predictive readings, logbook entries, task status updates.
+- Backend storage for ALL data modules currently in localStorage:
+  - Users (UserRecord map keyed by username)
+  - Breakdown records (BreakdownRecord[])
+  - CAPA records (CAPARecord[])
+  - History card entries (HistoryCardEntry[])
+  - Section hours config (SectionHoursConfig[])
+  - BD targets (BDTargets — per-section KPI targets)
+  - Task records (TaskRecord[])
+  - Kaizen records (KaizenRecord[])
+  - Predictive plans (PredictivePlan[])
+  - Predictive records (PredictiveRecord[])
+  - Electricity meters (ElectricityMeter[])
+  - Meter readings (MeterReading[])
+  - Logbook check items (LogbookCheckItem[])
+  - Logbook entries (LogbookEntry[])
+  - Spare items (SpareItem[])
+  - PM spare usage (PMSpareUsage[])
+  - Prioritized machine IDs list
+  - Notifications (AppNotification[])
+- Full CRUD backend functions for each module
+- Admin-only mutations (enforced via AccessControl)
+- User-level reads where appropriate
 
 ### Modify
-- PredictivePage: When an operator tries to submit a reading for a schedule that already has a submitted/pending/completed record for the same period, block submission and display 'Already Submitted' badge. Admin sees an Edit button instead of re-submission.
-- AppContext initial state: Expand demoData.ts and AppContext initial states to include 5 realistic sample entries for each module. These only load if no existing data is in localStorage (first-time load or fresh install).
-- All modules: 'Submitted' records show as read-only to operators. Admin always has an Edit button.
+- Frontend `AppContext.tsx`: replace ALL localStorage read/write with backend canister calls
+- Remove all sample data injection code (no longer needed)
+- Authentication: replace username/password localStorage login with ICP backend user management
+- All page components that consume AppContext will work unchanged (context API stays the same)
 
 ### Remove
-- Nothing removed.
+- All localStorage read/write calls in AppContext.tsx
+- All sample data injection blocks (the 5-entries-per-module demo data seeding)
+- Direct localStorage access from any component
 
 ## Implementation Plan
-1. Expand `demoData.ts` with 5 sample entries per module (breakdowns, CAPA, history cards, predictive plans+records, kaizen, tasks, electricity meters+readings, logbook check items+entries, spare items).
-2. Update AppContext initial state loaders to use the new demo data as fallback when localStorage is empty.
-3. In PredictivePage: add logic to check if a record already exists for the selected schedule plan + current period (month/week). If so, show 'Already Submitted' for operators and 'Edit' for admin.
-4. Ensure the same read-only-for-operator / editable-for-admin pattern is consistent in all other modules.
+
+1. **Backend (Motoko)**: Generate comprehensive backend with all 16+ data module types, full CRUD, admin/user access control
+2. **Select components**: authorization + blob-storage (already in use)
+3. **Frontend AppContext migration**: Replace all `localStorage.getItem/setItem` calls with async backend actor calls; convert synchronous state to async-loaded state; keep the context shape identical so all page components work unchanged
+4. **Authentication**: Replace localStorage-based login with ICP principal-based auth using authorization component; admin creates users, users log in with ICP identity or username/password stored in backend
+5. **Remove sample data**: Delete all `if (module.length === 0) { inject 5 samples }` blocks
+6. **Test**: Verify all panels load data from backend, CRUD operations persist across page reloads and different browsers

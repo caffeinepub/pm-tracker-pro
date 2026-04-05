@@ -7,25 +7,10 @@ import {
   useState,
 } from "react";
 import type { ChecklistTemplate, Machine, PMPlan, PMRecord } from "../backend";
-import {
-  DEMO_BREAKDOWN_RECORDS,
-  DEMO_CAPA_RECORDS,
-  DEMO_CHECKLIST_TEMPLATES,
-  DEMO_ELECTRICITY_METERS,
-  DEMO_HISTORY_CARDS,
-  DEMO_KAIZEN_RECORDS,
-  DEMO_LOGBOOK_CHECK_ITEMS,
-  DEMO_LOGBOOK_ENTRIES,
-  DEMO_MACHINES,
-  DEMO_METER_READINGS,
-  DEMO_PM_PLANS,
-  DEMO_PM_RECORDS,
-  DEMO_PREDICTIVE_PLANS,
-  DEMO_PREDICTIVE_RECORDS,
-  DEMO_SPARE_ITEMS,
-  DEMO_TASK_RECORDS,
-} from "../data/demoData";
+import type { _SERVICE } from "../declarations/backend.did";
+import { getRawActor } from "../utils/rawActor";
 
+// ─── exported app user ────────────────────────────────────────────────────────
 export interface AppUser {
   name: string;
   role: "admin" | "operator";
@@ -39,7 +24,13 @@ export interface AppNotification {
   read: boolean;
 }
 
-export interface PMPlanExtended extends PMPlan {
+// PMPlanExtended is compatible with PMPlan but adds optional fields
+export interface PMPlanExtended {
+  id?: string;
+  machineId: string;
+  month: bigint;
+  frequency: string;
+  checklistTemplateId: string;
   scheduledDate?: string;
   notes?: string;
 }
@@ -303,6 +294,10 @@ export interface PMSpareUsage {
   workType: "PM" | "Predictive" | "Logbook";
 }
 
+// ─── constants ────────────────────────────────────────────────────────────────
+
+const SESSION_KEY = "pm_tracker_session";
+
 const DEFAULT_BD_TARGETS: BDTargets = {
   "Powder Coating": { bdPct: 5, mttr: 60, mtbf: 500, uptime: 95 },
   "Machine Shop": { bdPct: 5, mttr: 60, mtbf: 500, uptime: 95 },
@@ -310,53 +305,692 @@ const DEFAULT_BD_TARGETS: BDTargets = {
   Overall: { bdPct: 5, mttr: 60, mtbf: 500, uptime: 95 },
 };
 
-const MACHINES_KEY = "pm_tracker_machines";
-const PRIORITIZED_KEY = "pm_tracker_prioritized_machines";
-const USERS_STORAGE_KEY = "pm_tracker_users";
-const SESSION_KEY = "pm_tracker_session";
-const HISTORY_KEY = "pm_tracker_history";
-const BREAKDOWN_KEY = "pm_tracker_breakdowns";
-const CAPA_KEY = "pm_tracker_capa";
-const SECTION_HOURS_KEY = "pm_tracker_section_hours";
-const TASKS_KEY = "pm_tracker_tasks";
-const BD_TARGETS_KEY = "pm_tracker_bd_targets";
-const KAIZEN_KEY = "pm_tracker_kaizen";
-const PREDICTIVE_PLANS_KEY = "pm_tracker_predictive_plans";
-const PREDICTIVE_RECORDS_KEY = "pm_tracker_predictive_records";
-const ELECTRICITY_METERS_KEY = "pm_tracker_electricity_meters";
-const METER_READINGS_KEY = "pm_tracker_meter_readings";
-const LOGBOOK_ITEMS_KEY = "pm_tracker_logbook_items";
-const LOGBOOK_ENTRIES_KEY = "pm_tracker_logbook_entries";
-const SPARES_KEY = "pm_tracker_spares";
-const PM_SPARE_USAGE_KEY = "pm_tracker_pm_spare_usage";
-
 const DEFAULT_SECTION_HOURS: SectionHoursConfig[] = [
   { section: "Powder Coating", availableProductionHrs: 2000, powerOff: 0 },
   { section: "Machine Shop", availableProductionHrs: 2000, powerOff: 0 },
   { section: "Utility", availableProductionHrs: 2000, powerOff: 0 },
 ];
-const DEFAULT_USERS: Record<string, UserRecord> = {
-  admin: { password: "admin123", name: "Admin User", role: "admin" },
-};
 
-function loadUsers(): Record<string, UserRecord> {
-  try {
-    const raw = localStorage.getItem(USERS_STORAGE_KEY);
-    if (raw) return JSON.parse(raw) as Record<string, UserRecord>;
-  } catch {
-    /* ignore */
+// ─── backend conversion helpers ───────────────────────────────────────────────
+
+function bigToNum(v: bigint): number {
+  return Number(v);
+}
+function numToBig(v: number): bigint {
+  return BigInt(Math.floor(v));
+}
+
+/** Convert a backend BreakdownRecord to a frontend BreakdownRecord */
+function fromBackendBreakdown(
+  b: import("../declarations/backend.did").BreakdownRecord,
+): BreakdownRecord {
+  return {
+    id: b.id,
+    machineId: b.machineId,
+    machineName: b.machineName,
+    date: b.date,
+    startTime: b.startTime,
+    endTime: b.endTime,
+    durationMinutes: b.durationMinutes,
+    problemDescription: b.problemDescription,
+    faultType: (b.faultType as BreakdownRecord["faultType"]) || "Other",
+    affectedPart: b.affectedPart,
+    temporaryAction: b.temporaryAction,
+    breakdownType:
+      (b.breakdownType as BreakdownRecord["breakdownType"]) || "Breakdown",
+    operatorName: b.operatorName,
+    operatorUsername: b.operatorUsername,
+    status: (b.status as BreakdownRecord["status"]) || "pending-approval",
+    isInCapa: b.isInCapa,
+    isInHistory: b.isInHistory,
+    adminRemarks: b.adminRemarks || undefined,
+    submittedAt: bigToNum(b.submittedAt),
+    photoDataUrl: b.photoFilename || undefined,
+    spareUsed: b.spareUsed?.map((s) => ({
+      spareName: s.spareName,
+      partSpec: s.partSpec || undefined,
+      qty: s.qty,
+      unit: s.unit,
+      cost: s.cost,
+    })),
+  };
+}
+
+function toBackendBreakdown(
+  r: BreakdownRecord,
+): import("../declarations/backend.did").BreakdownRecord {
+  return {
+    id: r.id,
+    machineId: r.machineId,
+    machineName: r.machineName,
+    date: r.date,
+    startTime: r.startTime,
+    endTime: r.endTime,
+    durationMinutes: r.durationMinutes,
+    problemDescription: r.problemDescription,
+    faultType: r.faultType,
+    affectedPart: r.affectedPart,
+    temporaryAction: r.temporaryAction,
+    breakdownType: r.breakdownType,
+    operatorName: r.operatorName,
+    operatorUsername: r.operatorUsername,
+    status: r.status,
+    isInCapa: r.isInCapa,
+    isInHistory: r.isInHistory,
+    adminRemarks: r.adminRemarks ?? "",
+    submittedAt: numToBig(r.submittedAt),
+    photoFilename: r.photoDataUrl ?? "",
+    spareUsed: (r.spareUsed ?? []).map((s) => ({
+      spareName: s.spareName,
+      partSpec: s.partSpec ?? "",
+      qty: s.qty,
+      unit: s.unit,
+      cost: s.cost,
+    })),
+  };
+}
+
+function fromBackendCapa(
+  c: import("../declarations/backend.did").CAPARecord,
+): CAPARecord {
+  return {
+    id: c.id,
+    breakdownId: c.breakdownId,
+    machineId: c.machineId,
+    machineName: c.machineName,
+    date: c.date,
+    problemSummary: c.problemSummary,
+    rootCause: c.rootCause,
+    temporaryAction: c.temporaryAction,
+    permanentAction: c.permanentAction,
+    responsiblePerson: c.responsiblePerson,
+    targetDate: c.targetDate,
+    status: (c.status as CAPARecord["status"]) || "Open",
+    createdAt: bigToNum(c.createdAt),
+    closedAt: c.closedAt === 0n ? undefined : bigToNum(c.closedAt),
+  };
+}
+
+function toBackendCapa(
+  c: CAPARecord,
+): import("../declarations/backend.did").CAPARecord {
+  return {
+    id: c.id,
+    breakdownId: c.breakdownId,
+    machineId: c.machineId,
+    machineName: c.machineName,
+    date: c.date,
+    problemSummary: c.problemSummary,
+    rootCause: c.rootCause,
+    temporaryAction: c.temporaryAction,
+    permanentAction: c.permanentAction,
+    responsiblePerson: c.responsiblePerson,
+    targetDate: c.targetDate,
+    status: c.status,
+    createdAt: numToBig(c.createdAt),
+    closedAt: c.closedAt ? numToBig(c.closedAt) : 0n,
+  };
+}
+
+function fromBackendHistory(
+  h: import("../declarations/backend.did").HistoryCardEntry,
+): HistoryCardEntry {
+  return {
+    id: h.id,
+    machineId: h.machineId,
+    machineName: h.machineName || undefined,
+    date: h.date,
+    eventType: (h.eventType as HistoryCardEntry["eventType"]) || "Other",
+    durationMinutes: h.durationMinutes,
+    problemDescription: h.problemDescription,
+    actionTaken: h.actionTaken,
+    doneBy: h.doneBy,
+    remarks: h.remarks,
+    sourceId: h.sourceId || undefined,
+    createdAt: bigToNum(h.createdAt),
+  };
+}
+
+function toBackendHistory(
+  h: HistoryCardEntry,
+): import("../declarations/backend.did").HistoryCardEntry {
+  return {
+    id: h.id,
+    machineId: h.machineId,
+    machineName: h.machineName ?? "",
+    date: h.date,
+    eventType: h.eventType,
+    durationMinutes: h.durationMinutes ?? 0,
+    problemDescription: h.problemDescription,
+    actionTaken: h.actionTaken,
+    doneBy: h.doneBy,
+    remarks: h.remarks,
+    sourceId: h.sourceId ?? "",
+    createdAt: numToBig(h.createdAt),
+  };
+}
+
+function fromBackendTask(
+  t: import("../declarations/backend.did").TaskRecord,
+): TaskRecord {
+  return {
+    id: t.id,
+    title: t.title,
+    description: t.description,
+    priority: (t.priority as TaskRecord["priority"]) || "medium",
+    status: (t.status as TaskRecord["status"]) || "not-started",
+    assignedTo: t.assignedTo,
+    assignedByUsername: t.assignedByUsername,
+    createdAt: bigToNum(t.createdAt),
+    dueDate: t.dueDate,
+    statusHistory: (t.statusHistory ?? []).map((h) => ({
+      status: h.status,
+      changedBy: h.changedBy,
+      remark: h.remark || undefined,
+      photoFilename: h.photoFilename || undefined,
+      timestamp: bigToNum(h.timestamp),
+      requiresApproval: h.requiresApproval,
+      approved: h.approved,
+    })),
+    lastUpdatedRemark: t.lastUpdatedRemark || undefined,
+    lastUpdatedPhoto: t.lastUpdatedPhoto || undefined,
+  };
+}
+
+function toBackendTask(
+  t: TaskRecord,
+): import("../declarations/backend.did").TaskRecord {
+  return {
+    id: t.id,
+    title: t.title,
+    description: t.description,
+    priority: t.priority,
+    status: t.status,
+    assignedTo: t.assignedTo,
+    assignedByUsername: t.assignedByUsername,
+    createdAt: numToBig(t.createdAt),
+    dueDate: t.dueDate,
+    statusHistory: (t.statusHistory ?? []).map((h) => ({
+      status: h.status,
+      changedBy: h.changedBy,
+      remark: h.remark ?? "",
+      photoFilename: h.photoFilename ?? "",
+      timestamp: numToBig(h.timestamp),
+      requiresApproval: h.requiresApproval ?? false,
+      approved: h.approved ?? false,
+    })),
+    lastUpdatedRemark: t.lastUpdatedRemark ?? "",
+    lastUpdatedPhoto: t.lastUpdatedPhoto ?? "",
+  };
+}
+
+function fromBackendKaizen(
+  k: import("../declarations/backend.did").KaizenRecord,
+): KaizenRecord {
+  return {
+    id: k.id,
+    title: k.title,
+    category: (k.category as KaizenRecord["category"]) || "Other",
+    machineArea: k.machineArea,
+    problemDescription: k.problemDescription,
+    improvementDescription: k.improvementDescription,
+    beforePhotoDataUrl: k.beforePhotoFilename || undefined,
+    afterPhotoDataUrl: k.afterPhotoFilename || undefined,
+    submittedBy: k.submittedBy,
+    submittedByUsername: k.submittedByUsername,
+    submittedAt: bigToNum(k.submittedAt),
+    status: (k.status as KaizenRecord["status"]) || "Pending Approval",
+    closedAt: k.closedAt === 0n ? undefined : bigToNum(k.closedAt),
+    closedRemarks: k.closedRemarks || undefined,
+    spares: (k.spares ?? []).map((s) => ({
+      name: s.name,
+      partNo: s.partNo,
+      qty: s.qty,
+      unit: s.unit,
+    })),
+    approvedAt: k.approvedAt === 0n ? undefined : bigToNum(k.approvedAt),
+    rejectedAt: k.rejectedAt === 0n ? undefined : bigToNum(k.rejectedAt),
+    rejectionReason: k.rejectionReason || undefined,
+    adminRemarks: k.adminRemarks || undefined,
+  };
+}
+
+function toBackendKaizen(
+  k: KaizenRecord,
+): import("../declarations/backend.did").KaizenRecord {
+  return {
+    id: k.id,
+    title: k.title,
+    category: k.category,
+    machineArea: k.machineArea,
+    problemDescription: k.problemDescription,
+    improvementDescription: k.improvementDescription,
+    beforePhotoFilename: k.beforePhotoDataUrl ?? "",
+    afterPhotoFilename: k.afterPhotoDataUrl ?? "",
+    submittedBy: k.submittedBy,
+    submittedByUsername: k.submittedByUsername,
+    submittedAt: numToBig(k.submittedAt),
+    status: k.status,
+    closedAt: k.closedAt ? numToBig(k.closedAt) : 0n,
+    closedRemarks: k.closedRemarks ?? "",
+    spares: (k.spares ?? []).map((s) => ({
+      name: s.name,
+      partNo: s.partNo,
+      qty: s.qty,
+      unit: s.unit,
+    })),
+    approvedAt: k.approvedAt ? numToBig(k.approvedAt) : 0n,
+    rejectedAt: k.rejectedAt ? numToBig(k.rejectedAt) : 0n,
+    rejectionReason: k.rejectionReason ?? "",
+    adminRemarks: k.adminRemarks ?? "",
+  };
+}
+
+function fromBackendPredictivePlan(
+  p: import("../declarations/backend.did").PredictivePlan,
+): PredictivePlan {
+  return {
+    id: p.id,
+    machineId: p.machineId,
+    machineName: p.machineName,
+    scheduledDate: p.scheduledDate,
+    frequency: (p.frequency as PredictivePlan["frequency"]) || "Monthly",
+    parameters: [...p.parameters],
+    notes: p.notes,
+    createdAt: bigToNum(p.createdAt),
+  };
+}
+
+function toBackendPredictivePlan(
+  p: PredictivePlan,
+): import("../declarations/backend.did").PredictivePlan {
+  return {
+    id: p.id,
+    machineId: p.machineId,
+    machineName: p.machineName,
+    scheduledDate: p.scheduledDate,
+    frequency: p.frequency,
+    parameters: [...p.parameters],
+    notes: p.notes,
+    createdAt: numToBig(p.createdAt),
+  };
+}
+
+function fromBackendPredictiveRecord(
+  r: import("../declarations/backend.did").PredictiveRecord,
+): PredictiveRecord {
+  const readings: Record<string, string> = {};
+  for (const reading of r.readings) {
+    readings[reading.paramName] = reading.value;
   }
-  return { ...DEFAULT_USERS };
+  return {
+    id: r.id,
+    planId: r.planId,
+    machineId: r.machineId,
+    machineName: r.machineName,
+    date: r.date,
+    readings,
+    remarks: r.remarks,
+    operatorName: r.operatorName,
+    operatorUsername: r.operatorUsername,
+    submittedAt: bigToNum(r.submittedAt),
+    status: (r.status as PredictiveRecord["status"]) || "pending-approval",
+  };
 }
 
-function saveUsers(users: Record<string, UserRecord>) {
-  localStorage.setItem(USERS_STORAGE_KEY, JSON.stringify(users));
+function toBackendPredictiveRecord(
+  r: PredictiveRecord,
+): import("../declarations/backend.did").PredictiveRecord {
+  return {
+    id: r.id,
+    planId: r.planId,
+    machineId: r.machineId,
+    machineName: r.machineName,
+    date: r.date,
+    readings: Object.entries(r.readings).map(([paramName, value]) => ({
+      paramName,
+      value,
+    })),
+    remarks: r.remarks,
+    operatorName: r.operatorName,
+    operatorUsername: r.operatorUsername,
+    submittedAt: numToBig(r.submittedAt),
+    status: r.status,
+  };
 }
+
+function fromBackendElectricityMeter(
+  m: import("../declarations/backend.did").ElectricityMeter,
+): ElectricityMeter {
+  return {
+    id: m.id,
+    name: m.name,
+    unit: m.unit,
+    multiplier: m.multiplier,
+    location: m.location,
+    includeInKpi: m.includeInKpi,
+    createdAt: bigToNum(m.createdAt),
+  };
+}
+
+function toBackendElectricityMeter(
+  m: ElectricityMeter,
+): import("../declarations/backend.did").ElectricityMeter {
+  return {
+    id: m.id,
+    name: m.name,
+    unit: m.unit,
+    multiplier: m.multiplier,
+    location: m.location,
+    includeInKpi: m.includeInKpi,
+    createdAt: numToBig(m.createdAt),
+  };
+}
+
+function fromBackendMeterReading(
+  r: import("../declarations/backend.did").MeterReading,
+): MeterReading {
+  return {
+    id: r.id,
+    meterId: r.meterId,
+    meterName: r.meterName,
+    date: r.date,
+    time: r.time,
+    reading: r.reading,
+    startReading: r.reading, // map 'reading' to startReading for compat
+    endReading: r.reading,
+    consumption: r.consumption,
+    enteredBy: r.enteredBy,
+    enteredByUsername: r.enteredByUsername,
+    submittedAt: bigToNum(r.submittedAt),
+  };
+}
+
+function toBackendMeterReading(
+  r: MeterReading,
+): import("../declarations/backend.did").MeterReading {
+  return {
+    id: r.id,
+    meterId: r.meterId,
+    meterName: r.meterName,
+    date: r.date,
+    time: r.time ?? "",
+    reading: r.reading ?? r.startReading,
+    consumption: r.consumption,
+    enteredBy: r.enteredBy,
+    enteredByUsername: r.enteredByUsername,
+    submittedAt: numToBig(r.submittedAt),
+  };
+}
+
+function fromBackendLogbookCheckItem(
+  i: import("../declarations/backend.did").LogbookCheckItem,
+): LogbookCheckItem {
+  return {
+    id: i.id,
+    description: i.description,
+    category: i.category,
+    createdAt: bigToNum(i.createdAt),
+  };
+}
+
+function toBackendLogbookCheckItem(
+  i: LogbookCheckItem,
+): import("../declarations/backend.did").LogbookCheckItem {
+  return {
+    id: i.id,
+    description: i.description,
+    category: i.category,
+    createdAt: numToBig(i.createdAt),
+  };
+}
+
+function fromBackendLogbookEntry(
+  e: import("../declarations/backend.did").LogbookEntry,
+): LogbookEntry {
+  return {
+    id: e.id,
+    date: e.date,
+    operatorName: e.operatorName,
+    operatorUsername: e.operatorUsername,
+    items: (e.items ?? []).map((item) => ({
+      checkItemId: item.checkItemId,
+      description: item.description,
+      status: (item.status as LogbookEntry["items"][number]["status"]) || "OK",
+      remark: item.remark,
+      photoDataUrl: item.photoFilename || undefined,
+    })),
+    generalRemarks: e.generalRemarks,
+    submittedAt: bigToNum(e.submittedAt),
+    activities: (e.activities ?? []).map((a) => ({
+      description: a.description,
+      timeSpent: a.timeSpent,
+      status: a.status,
+      remarks: a.remarks,
+    })),
+    spareUsed: (e.spareUsed ?? []).map((s) => ({
+      spareName: s.spareName,
+      qty: s.qty,
+      cost: s.cost,
+    })),
+  };
+}
+
+function toBackendLogbookEntry(
+  e: LogbookEntry,
+): import("../declarations/backend.did").LogbookEntry {
+  return {
+    id: e.id,
+    date: e.date,
+    operatorName: e.operatorName,
+    operatorUsername: e.operatorUsername,
+    items: (e.items ?? []).map((item) => ({
+      checkItemId: item.checkItemId,
+      description: item.description,
+      status: item.status,
+      remark: item.remark,
+      photoFilename: item.photoDataUrl ?? "",
+    })),
+    generalRemarks: e.generalRemarks,
+    submittedAt: numToBig(e.submittedAt),
+    activities: (e.activities ?? []).map((a) => ({
+      description: a.description,
+      timeSpent: a.timeSpent,
+      status: a.status,
+      remarks: a.remarks,
+      photoFilename: "",
+    })),
+    spareUsed: (e.spareUsed ?? []).map((s) => ({
+      spareName: s.spareName,
+      qty: s.qty,
+      cost: s.cost,
+    })),
+  };
+}
+
+function fromBackendSpareItem(
+  s: import("../declarations/backend.did").SpareItem,
+): SpareItem {
+  return {
+    id: s.id,
+    partName: s.partName,
+    partSpec: s.partSpec,
+    qtyInStock: s.qtyInStock,
+    minStockLevel: s.minStockLevel,
+    unit: s.unit,
+    costPerUnit: s.costPerUnit,
+    applicableMachineSection: s.applicableMachineSection,
+    createdAt: bigToNum(s.createdAt),
+  };
+}
+
+function toBackendSpareItem(
+  s: SpareItem,
+): import("../declarations/backend.did").SpareItem {
+  return {
+    id: s.id,
+    partName: s.partName,
+    partSpec: s.partSpec,
+    qtyInStock: s.qtyInStock,
+    minStockLevel: s.minStockLevel,
+    unit: s.unit,
+    costPerUnit: s.costPerUnit,
+    applicableMachineSection: s.applicableMachineSection,
+    createdAt: numToBig(s.createdAt),
+  };
+}
+
+function fromBackendPMSpareUsage(
+  u: import("../declarations/backend.did").PMSpareUsage,
+): PMSpareUsage {
+  return {
+    id: u.id,
+    machineId: u.machineId,
+    machineName: u.machineName,
+    date: u.date,
+    spareUsed: (u.spareUsed ?? []).map((s) => ({
+      spareName: s.spareName,
+      partSpec: s.partSpec || undefined,
+      qty: s.qty,
+      unit: s.unit,
+      cost: s.cost,
+    })),
+    submittedBy: u.submittedBy,
+    submittedByUsername: u.submittedByUsername,
+    workType: (u.workType as PMSpareUsage["workType"]) || "PM",
+  };
+}
+
+function toBackendPMSpareUsage(
+  u: PMSpareUsage,
+): import("../declarations/backend.did").PMSpareUsage {
+  return {
+    id: u.id,
+    machineId: u.machineId,
+    machineName: u.machineName,
+    date: u.date,
+    spareUsed: (u.spareUsed ?? []).map((s) => ({
+      spareName: s.spareName,
+      partSpec: s.partSpec ?? "",
+      qty: s.qty,
+      unit: s.unit,
+      cost: s.cost,
+    })),
+    submittedBy: u.submittedBy,
+    submittedByUsername: u.submittedByUsername,
+    workType: u.workType,
+    submittedAt: numToBig(Date.now()),
+  };
+}
+
+function fromBackendMachine(
+  m: import("../declarations/backend.did").Machine,
+): MachineExtended {
+  return {
+    id: m.id,
+    name: m.name,
+    department: m.department,
+    machineType: m.machineType,
+    location: m.location,
+    section: (m.section as MachineExtended["section"]) || "",
+    availableWorkingHours: m.availableWorkingHours,
+  };
+}
+
+function toBackendMachine(
+  m: MachineExtended,
+): import("../declarations/backend.did").Machine {
+  return {
+    id: m.id,
+    name: m.name,
+    department: m.department ?? "",
+    machineType: m.machineType ?? "",
+    location: m.location ?? "",
+    section: m.section ?? "",
+    availableWorkingHours: m.availableWorkingHours ?? 0,
+  };
+}
+
+function fromBackendPMPlan(
+  p: import("../declarations/backend.did").PMPlan,
+): PMPlanExtended {
+  return {
+    id: p.id,
+    machineId: p.machineId,
+    month: p.month,
+    frequency: p.frequency,
+    checklistTemplateId: p.checklistTemplateId,
+    scheduledDate: p.scheduledDate,
+    notes: p.notes,
+  };
+}
+
+function toBackendPMPlan(
+  p: PMPlanExtended,
+): import("../declarations/backend.did").PMPlan {
+  return {
+    id: p.id ?? `plan-${p.machineId}-${p.month}`,
+    machineId: p.machineId,
+    month: p.month,
+    frequency: p.frequency ?? "",
+    checklistTemplateId: p.checklistTemplateId ?? "",
+    scheduledDate: p.scheduledDate ?? "",
+    notes: p.notes ?? "",
+  };
+}
+
+function fromBackendPMRecord(
+  r: import("../declarations/backend.did").PMRecord,
+): PMRecord {
+  const rec: any = {
+    id: r.id,
+    machineId: r.machineId,
+    operatorId: r.operatorId,
+    operatorName: r.operatorName,
+    completedDate: r.completedDate,
+    checklistResults: r.checklistResults,
+    status: r.status,
+    spareUsed: r.spareUsed,
+    submittedAt: r.submittedAt,
+  };
+  return rec as PMRecord;
+}
+
+function toBackendPMRecord(
+  r: PMRecord,
+): import("../declarations/backend.did").PMRecord {
+  const rr = r as any;
+  return {
+    id: rr.id,
+    machineId: rr.machineId,
+    operatorId: rr.operatorId ?? "",
+    operatorName: rr.operatorName,
+    completedDate: rr.completedDate,
+    checklistResults: (rr.checklistResults ?? []).map((c: any) => ({
+      itemId: c.itemId ?? "",
+      value: c.value ?? "",
+      remark: c.remark ?? "",
+      photoFilename: c.photoFilename ?? "",
+    })),
+    status: rr.status ?? "",
+    spareUsed: (rr.spareUsed ?? []).map((s: any) => ({
+      spareName: s.spareName ?? "",
+      partSpec: s.partSpec ?? "",
+      qty: s.qty ?? 0,
+      unit: s.unit ?? "",
+      cost: s.cost ?? 0,
+    })),
+    submittedAt: rr.submittedAt ?? numToBig(Date.now()),
+  };
+}
+
+// ─── context type ─────────────────────────────────────────────────────────────
 
 type AppContextType = {
   user: AppUser | null;
-  login: (username: string, password: string) => boolean;
+  login: (username: string, password: string) => Promise<boolean>;
   logout: () => void;
+  isLoading: boolean;
   machines: MachineExtended[];
   pmPlans: PMPlanExtended[];
   checklistTemplates: ChecklistTemplate[];
@@ -504,188 +1138,195 @@ export interface NavParams {
 
 const AppContext = createContext<AppContextType | null>(null);
 
+// ─── helper: fire-and-forget backend write with error swallow ─────────────────
+async function callBackend<T>(
+  fn: (actor: _SERVICE) => Promise<T>,
+): Promise<T | undefined> {
+  try {
+    const actor = await getRawActor();
+    return await fn(actor);
+  } catch (err) {
+    console.warn("[PMMS] backend call failed:", err);
+    return undefined;
+  }
+}
+
+// ─── AppProvider ──────────────────────────────────────────────────────────────
 export function AppProvider({ children }: { children: ReactNode }) {
+  // ── session ──────────────────────────────────────────────────────────────
   const [user, setUser] = useState<AppUser | null>(() => {
     try {
-      const raw = localStorage.getItem(SESSION_KEY);
+      const raw = sessionStorage.getItem(SESSION_KEY);
       if (raw) return JSON.parse(raw) as AppUser;
     } catch {
       /* ignore */
     }
     return null;
   });
-  const [machines, setMachines] = useState<MachineExtended[]>(() => {
-    try {
-      const r = localStorage.getItem(MACHINES_KEY);
-      if (r) return JSON.parse(r) as MachineExtended[];
-    } catch {}
-    return DEMO_MACHINES as MachineExtended[];
-  });
-  const [pmPlans, setPmPlans] = useState<PMPlanExtended[]>(
-    DEMO_PM_PLANS as PMPlanExtended[],
-  );
+  const [isLoading, setIsLoading] = useState(false);
+  const [dataLoaded, setDataLoaded] = useState(false);
+
+  // ── data state ────────────────────────────────────────────────────────────
+  const [machines, setMachines] = useState<MachineExtended[]>([]);
+  const [pmPlans, setPmPlans] = useState<PMPlanExtended[]>([]);
   const [checklistTemplates, setChecklistTemplates] = useState<
     ChecklistTemplate[]
-  >(DEMO_CHECKLIST_TEMPLATES);
-  const [pmRecords, setPmRecords] = useState<PMRecord[]>(DEMO_PM_RECORDS);
-  const [currentPage, setCurrentPage] = useState<PageName>(() => {
-    try {
-      const raw = localStorage.getItem(SESSION_KEY);
-      if (raw) return "dashboard";
-    } catch {}
-    return "login";
-  });
+  >([]);
+  const [pmRecords, setPmRecords] = useState<PMRecord[]>([]);
+  const [currentPage, setCurrentPage] = useState<PageName>(
+    user ? "dashboard" : "login",
+  );
   const [navParams, setNavParams] = useState<NavParams>({});
   const [notifications, setNotifications] = useState<AppNotification[]>([]);
   const [breakdownRecords, setBreakdownRecords] = useState<BreakdownRecord[]>(
-    () => {
-      try {
-        const r = localStorage.getItem(BREAKDOWN_KEY);
-        if (r) {
-          const parsed = JSON.parse(r);
-          return Array.isArray(parsed) ? parsed : DEMO_BREAKDOWN_RECORDS;
-        }
-      } catch {}
-      return DEMO_BREAKDOWN_RECORDS;
-    },
+    [],
   );
-  const [capaRecords, setCapaRecords] = useState<CAPARecord[]>(() => {
-    try {
-      const r = localStorage.getItem(CAPA_KEY);
-      if (r) {
-        const parsed = JSON.parse(r);
-        return Array.isArray(parsed) ? parsed : DEMO_CAPA_RECORDS;
-      }
-    } catch {}
-    return DEMO_CAPA_RECORDS;
-  });
-  const [historyCards, setHistoryCards] = useState<HistoryCardEntry[]>(() => {
-    try {
-      const r = localStorage.getItem(HISTORY_KEY);
-      if (r) {
-        const parsed = JSON.parse(r);
-        return Array.isArray(parsed) ? parsed : DEMO_HISTORY_CARDS;
-      }
-    } catch {}
-    return DEMO_HISTORY_CARDS;
-  });
+  const [capaRecords, setCapaRecords] = useState<CAPARecord[]>([]);
+  const [historyCards, setHistoryCards] = useState<HistoryCardEntry[]>([]);
   const [sectionHoursConfigs, setSectionHoursConfigs] = useState<
     SectionHoursConfig[]
-  >(() => {
-    try {
-      const r = localStorage.getItem(SECTION_HOURS_KEY);
-      if (r) {
-        const parsed = JSON.parse(r);
-        return Array.isArray(parsed) ? parsed : [];
-      }
-    } catch {}
-    return DEFAULT_SECTION_HOURS;
-  });
+  >(DEFAULT_SECTION_HOURS);
   const [prioritizedMachineIds, setPrioritizedMachineIds] = useState<string[]>(
-    () => {
-      try {
-        const r = localStorage.getItem(PRIORITIZED_KEY);
-        if (r) return JSON.parse(r) as string[];
-      } catch {}
-      return [];
-    },
+    [],
   );
-  const [taskRecords, setTaskRecords] = useState<TaskRecord[]>(() => {
-    try {
-      const r = localStorage.getItem(TASKS_KEY);
-      if (r) {
-        const parsed = JSON.parse(r);
-        return Array.isArray(parsed) ? parsed : DEMO_TASK_RECORDS;
-      }
-    } catch {}
-    return DEMO_TASK_RECORDS;
-  });
-  const [bdTargets, setBdTargets] = useState<BDTargets>(() => {
-    try {
-      const r = localStorage.getItem(BD_TARGETS_KEY);
-      if (r) return { ...DEFAULT_BD_TARGETS, ...JSON.parse(r) };
-    } catch {}
-    return DEFAULT_BD_TARGETS;
-  });
-  const [kaizenRecords, setKaizenRecords] = useState<KaizenRecord[]>(() => {
-    try {
-      const r = localStorage.getItem(KAIZEN_KEY);
-      if (r) {
-        const parsed = JSON.parse(r);
-        return Array.isArray(parsed) ? parsed : DEMO_KAIZEN_RECORDS;
-      }
-    } catch {}
-    return DEMO_KAIZEN_RECORDS;
-  });
-  const [predictivePlans, setPredictivePlans] = useState<PredictivePlan[]>(
-    () => {
-      try {
-        const r = localStorage.getItem(PREDICTIVE_PLANS_KEY);
-        if (r) {
-          const parsed = JSON.parse(r);
-          return Array.isArray(parsed) ? parsed : DEMO_PREDICTIVE_PLANS;
-        }
-      } catch {}
-      return DEMO_PREDICTIVE_PLANS;
-    },
-  );
+  const [taskRecords, setTaskRecords] = useState<TaskRecord[]>([]);
+  const [bdTargets, setBdTargets] = useState<BDTargets>(DEFAULT_BD_TARGETS);
+  const [kaizenRecords, setKaizenRecords] = useState<KaizenRecord[]>([]);
+  const [predictivePlans, setPredictivePlans] = useState<PredictivePlan[]>([]);
   const [predictiveRecords, setPredictiveRecords] = useState<
     PredictiveRecord[]
-  >(() => {
-    try {
-      const r = localStorage.getItem(PREDICTIVE_RECORDS_KEY);
-      if (r) {
-        const parsed = JSON.parse(r);
-        return Array.isArray(parsed) ? parsed : DEMO_PREDICTIVE_RECORDS;
-      }
-    } catch {}
-    return DEMO_PREDICTIVE_RECORDS;
-  });
+  >([]);
   const [electricityMeters, setElectricityMeters] = useState<
     ElectricityMeter[]
-  >(() => {
-    try {
-      const r = localStorage.getItem(ELECTRICITY_METERS_KEY);
-      if (r) {
-        const parsed = JSON.parse(r);
-        return Array.isArray(parsed) ? parsed : DEMO_ELECTRICITY_METERS;
-      }
-    } catch {}
-    return DEMO_ELECTRICITY_METERS;
-  });
-  const [meterReadings, setMeterReadings] = useState<MeterReading[]>(() => {
-    try {
-      const r = localStorage.getItem(METER_READINGS_KEY);
-      if (r) {
-        const parsed = JSON.parse(r);
-        return Array.isArray(parsed) ? parsed : DEMO_METER_READINGS;
-      }
-    } catch {}
-    return DEMO_METER_READINGS;
-  });
+  >([]);
+  const [meterReadings, setMeterReadings] = useState<MeterReading[]>([]);
   const [logbookCheckItems, setLogbookCheckItems] = useState<
     LogbookCheckItem[]
-  >(() => {
-    try {
-      const r = localStorage.getItem(LOGBOOK_ITEMS_KEY);
-      if (r) {
-        const parsed = JSON.parse(r);
-        return Array.isArray(parsed) ? parsed : DEMO_LOGBOOK_CHECK_ITEMS;
-      }
-    } catch {}
-    return DEMO_LOGBOOK_CHECK_ITEMS;
-  });
-  const [logbookEntries, setLogbookEntries] = useState<LogbookEntry[]>(() => {
-    try {
-      const r = localStorage.getItem(LOGBOOK_ENTRIES_KEY);
-      if (r) {
-        const parsed = JSON.parse(r);
-        return Array.isArray(parsed) ? parsed : DEMO_LOGBOOK_ENTRIES;
-      }
-    } catch {}
-    return DEMO_LOGBOOK_ENTRIES;
-  });
+  >([]);
+  const [logbookEntries, setLogbookEntries] = useState<LogbookEntry[]>([]);
+  const [spareItems, setSpareItems] = useState<SpareItem[]>([]);
+  const [pmSpareUsage, setPmSpareUsage] = useState<PMSpareUsage[]>([]);
+  // users cache - loaded from backend, kept in sync
+  const [usersCache, setUsersCache] = useState<Record<string, UserRecord>>({});
 
+  // ── initial data load from backend ───────────────────────────────────────
+  useEffect(() => {
+    if (dataLoaded) return;
+    let cancelled = false;
+    setIsLoading(true);
+
+    (async () => {
+      try {
+        const actor = await getRawActor();
+        const [
+          allMachines,
+          allPmPlans,
+          allTemplates,
+          allPmRecords,
+          allBreakdowns,
+          allCapas,
+          allHistory,
+          allTasks,
+          allKaizen,
+          allPredPlans,
+          allPredRecords,
+          allMeters,
+          allReadings,
+          allLogbookItems,
+          allLogbookEntries,
+          allSpares,
+          allSpareUsage,
+          allSectionHours,
+          allBdTargets,
+          allPrioritized,
+          allUsers,
+        ] = await Promise.all([
+          actor.getAllMachines().catch(() => [] as any[]),
+          actor.getAllPMPlans().catch(() => [] as any[]),
+          actor.getAllChecklistTemplates().catch(() => [] as any[]),
+          actor.getAllPMRecords().catch(() => [] as any[]),
+          actor.getAllBreakdownRecords().catch(() => [] as any[]),
+          actor.getAllCAPARecords().catch(() => [] as any[]),
+          actor.getAllHistoryEntries().catch(() => [] as any[]),
+          actor.getAllTaskRecords().catch(() => [] as any[]),
+          actor.getAllKaizenRecords().catch(() => [] as any[]),
+          actor.getAllPredictivePlans().catch(() => [] as any[]),
+          actor.getAllPredictiveRecords().catch(() => [] as any[]),
+          actor.getAllElectricityMeters().catch(() => [] as any[]),
+          actor.getAllMeterReadings().catch(() => [] as any[]),
+          actor.getAllLogbookCheckItems().catch(() => [] as any[]),
+          actor.getAllLogbookEntries().catch(() => [] as any[]),
+          actor.getAllSpareItems().catch(() => [] as any[]),
+          actor.getAllPMSpareUsage().catch(() => [] as any[]),
+          actor.getAllSectionHoursConfigs().catch(() => [] as any[]),
+          actor.getAllBDTargets().catch(() => [] as [string, any][]),
+          actor.getPrioritizedMachines().catch(() => [] as string[]),
+          actor.getAllUserRecords().catch(() => [] as any[]),
+        ]);
+
+        if (cancelled) return;
+
+        setMachines(allMachines.map(fromBackendMachine));
+        setPmPlans(allPmPlans.map(fromBackendPMPlan));
+        setChecklistTemplates(allTemplates as ChecklistTemplate[]);
+        setPmRecords(allPmRecords.map(fromBackendPMRecord));
+        setBreakdownRecords(allBreakdowns.map(fromBackendBreakdown));
+        setCapaRecords(allCapas.map(fromBackendCapa));
+        setHistoryCards(allHistory.map(fromBackendHistory));
+        setTaskRecords(allTasks.map(fromBackendTask));
+        setKaizenRecords(allKaizen.map(fromBackendKaizen));
+        setPredictivePlans(allPredPlans.map(fromBackendPredictivePlan));
+        setPredictiveRecords(allPredRecords.map(fromBackendPredictiveRecord));
+        setElectricityMeters(allMeters.map(fromBackendElectricityMeter));
+        setMeterReadings(allReadings.map(fromBackendMeterReading));
+        setLogbookCheckItems(allLogbookItems.map(fromBackendLogbookCheckItem));
+        setLogbookEntries(allLogbookEntries.map(fromBackendLogbookEntry));
+        setSpareItems(allSpares.map(fromBackendSpareItem));
+        setPmSpareUsage(allSpareUsage.map(fromBackendPMSpareUsage));
+        setPrioritizedMachineIds(allPrioritized);
+
+        // Section hours
+        if (allSectionHours.length > 0) {
+          setSectionHoursConfigs(allSectionHours as SectionHoursConfig[]);
+        }
+
+        // Users cache
+        if (allUsers.length > 0) {
+          const map: Record<string, UserRecord> = {};
+          for (const r of allUsers) {
+            map[r.username.toLowerCase()] = {
+              password: r.passwordHash,
+              name: r.name,
+              role: (r.role as "admin" | "operator") || "operator",
+            };
+          }
+          setUsersCache(map);
+        }
+
+        // BD Targets: convert array of tuples to object
+        if (allBdTargets.length > 0) {
+          const obj: Partial<BDTargets> = {};
+          for (const [section, targets] of allBdTargets) {
+            (obj as any)[section] = targets;
+          }
+          setBdTargets({ ...DEFAULT_BD_TARGETS, ...obj });
+        }
+      } catch (err) {
+        console.warn("[PMMS] initial data load failed:", err);
+      } finally {
+        if (!cancelled) {
+          setIsLoading(false);
+          setDataLoaded(true);
+        }
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [dataLoaded]);
+
+  // ── CAPA notification on login ────────────────────────────────────────────
   // biome-ignore lint/correctness/useExhaustiveDependencies: intentionally only run on login
   useEffect(() => {
     if (!user) return;
@@ -704,130 +1345,33 @@ export function AppProvider({ children }: { children: ReactNode }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [user]);
 
+  // ── session persistence ───────────────────────────────────────────────────
   useEffect(() => {
-    if (user) localStorage.setItem(SESSION_KEY, JSON.stringify(user));
-    else localStorage.removeItem(SESSION_KEY);
+    if (user) sessionStorage.setItem(SESSION_KEY, JSON.stringify(user));
+    else sessionStorage.removeItem(SESSION_KEY);
   }, [user]);
-  useEffect(() => {
-    localStorage.setItem(MACHINES_KEY, JSON.stringify(machines));
-  }, [machines]);
-  useEffect(() => {
-    localStorage.setItem(
-      PRIORITIZED_KEY,
-      JSON.stringify(prioritizedMachineIds),
-    );
-  }, [prioritizedMachineIds]);
-  useEffect(() => {
-    localStorage.setItem(HISTORY_KEY, JSON.stringify(historyCards));
-  }, [historyCards]);
-  useEffect(() => {
-    localStorage.setItem(BREAKDOWN_KEY, JSON.stringify(breakdownRecords));
-  }, [breakdownRecords]);
-  useEffect(() => {
-    localStorage.setItem(CAPA_KEY, JSON.stringify(capaRecords));
-  }, [capaRecords]);
-  useEffect(() => {
-    localStorage.setItem(
-      SECTION_HOURS_KEY,
-      JSON.stringify(sectionHoursConfigs),
-    );
-  }, [sectionHoursConfigs]);
-  useEffect(() => {
-    localStorage.setItem(TASKS_KEY, JSON.stringify(taskRecords));
-  }, [taskRecords]);
-  useEffect(() => {
-    localStorage.setItem(BD_TARGETS_KEY, JSON.stringify(bdTargets));
-  }, [bdTargets]);
-  useEffect(() => {
-    localStorage.setItem(KAIZEN_KEY, JSON.stringify(kaizenRecords));
-  }, [kaizenRecords]);
-  useEffect(() => {
-    localStorage.setItem(PREDICTIVE_PLANS_KEY, JSON.stringify(predictivePlans));
-  }, [predictivePlans]);
-  useEffect(() => {
-    localStorage.setItem(
-      PREDICTIVE_RECORDS_KEY,
-      JSON.stringify(predictiveRecords),
-    );
-  }, [predictiveRecords]);
-  useEffect(() => {
-    localStorage.setItem(
-      ELECTRICITY_METERS_KEY,
-      JSON.stringify(electricityMeters),
-    );
-  }, [electricityMeters]);
-  useEffect(() => {
-    localStorage.setItem(METER_READINGS_KEY, JSON.stringify(meterReadings));
-  }, [meterReadings]);
-  useEffect(() => {
-    localStorage.setItem(LOGBOOK_ITEMS_KEY, JSON.stringify(logbookCheckItems));
-  }, [logbookCheckItems]);
-  useEffect(() => {
-    localStorage.setItem(LOGBOOK_ENTRIES_KEY, JSON.stringify(logbookEntries));
-  }, [logbookEntries]);
-  const [spareItems, setSpareItems] = useState<SpareItem[]>(() => {
-    try {
-      const r = localStorage.getItem(SPARES_KEY);
-      if (r) {
-        const parsed = JSON.parse(r);
-        return Array.isArray(parsed) ? parsed : DEMO_SPARE_ITEMS;
+
+  // ── login/logout ─────────────────────────────────────────────────────────
+  const login = useCallback(
+    async (username: string, password: string): Promise<boolean> => {
+      try {
+        const actor = await getRawActor();
+        const result = await actor.loginUser(username, btoa(password));
+        const record = result.length > 0 ? result[0] : undefined;
+        if (record) {
+          const role: "admin" | "operator" =
+            record.role === "admin" ? "admin" : "operator";
+          setUser({ name: record.name, role, username: record.username });
+          return true;
+        }
+        return false;
+      } catch (err) {
+        console.warn("[PMMS] login error:", err);
+        return false;
       }
-    } catch {}
-    return DEMO_SPARE_ITEMS;
-  });
-  const [pmSpareUsage, setPmSpareUsage] = useState<PMSpareUsage[]>(() => {
-    try {
-      const r = localStorage.getItem(PM_SPARE_USAGE_KEY);
-      if (r) {
-        const parsed = JSON.parse(r);
-        return Array.isArray(parsed) ? parsed : [];
-      }
-    } catch {}
-    return [];
-  });
-
-  // One-time demo data seeding: fill any module that has zero records
-  // biome-ignore lint/correctness/useExhaustiveDependencies: intentional one-time seed
-  useEffect(() => {
-    const DEMO_SEED_KEY = "pmms_demo_v2_seeded";
-    if (localStorage.getItem(DEMO_SEED_KEY)) return;
-    if (breakdownRecords.length === 0)
-      setBreakdownRecords(DEMO_BREAKDOWN_RECORDS);
-    if (capaRecords.length === 0) setCapaRecords(DEMO_CAPA_RECORDS);
-    if (historyCards.length === 0) setHistoryCards(DEMO_HISTORY_CARDS);
-    if (taskRecords.length === 0) setTaskRecords(DEMO_TASK_RECORDS);
-    if (kaizenRecords.length === 0) setKaizenRecords(DEMO_KAIZEN_RECORDS);
-    if (predictivePlans.length === 0) setPredictivePlans(DEMO_PREDICTIVE_PLANS);
-    if (predictiveRecords.length === 0)
-      setPredictiveRecords(DEMO_PREDICTIVE_RECORDS);
-    if (electricityMeters.length === 0)
-      setElectricityMeters(DEMO_ELECTRICITY_METERS);
-    if (meterReadings.length === 0) setMeterReadings(DEMO_METER_READINGS);
-    if (logbookCheckItems.length === 0)
-      setLogbookCheckItems(DEMO_LOGBOOK_CHECK_ITEMS);
-    if (logbookEntries.length === 0) setLogbookEntries(DEMO_LOGBOOK_ENTRIES);
-    if (spareItems.length === 0) setSpareItems(DEMO_SPARE_ITEMS);
-    if (machines.length === 0) setMachines(DEMO_MACHINES as MachineExtended[]);
-    localStorage.setItem(DEMO_SEED_KEY, "1");
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-
-  useEffect(() => {
-    localStorage.setItem(SPARES_KEY, JSON.stringify(spareItems));
-  }, [spareItems]);
-  useEffect(() => {
-    localStorage.setItem(PM_SPARE_USAGE_KEY, JSON.stringify(pmSpareUsage));
-  }, [pmSpareUsage]);
-
-  const login = useCallback((username: string, password: string): boolean => {
-    const users = loadUsers();
-    const cred = users[username.toLowerCase()];
-    if (cred && cred.password === password) {
-      setUser({ name: cred.name, role: cred.role, username });
-      return true;
-    }
-    return false;
-  }, []);
+    },
+    [],
+  );
 
   const logout = useCallback(() => {
     setUser(null);
@@ -840,10 +1384,10 @@ export function AppProvider({ children }: { children: ReactNode }) {
     setNavParams(params);
   }, []);
 
-  const getUsers = useCallback(
-    (): Record<string, UserRecord> => loadUsers(),
-    [],
-  );
+  // ── user management (sync cache + async backend sync) ───────────────────
+  const getUsers = useCallback((): Record<string, UserRecord> => {
+    return usersCache;
+  }, [usersCache]);
 
   const createUser = useCallback(
     (
@@ -852,14 +1396,14 @@ export function AppProvider({ children }: { children: ReactNode }) {
       name: string,
       role: "admin" | "operator",
     ): boolean => {
-      const users = loadUsers();
       const key = username.toLowerCase();
-      if (users[key]) return false;
-      users[key] = { password, name, role };
-      saveUsers(users);
+      if (usersCache[key]) return false;
+      const newUser: UserRecord = { password, name, role };
+      setUsersCache((prev) => ({ ...prev, [key]: newUser }));
+      callBackend((a) => a.createUser(username, btoa(password), name, role));
       return true;
     },
-    [],
+    [usersCache],
   );
 
   const updateUser = useCallback(
@@ -870,99 +1414,136 @@ export function AppProvider({ children }: { children: ReactNode }) {
         name?: string;
         role?: "admin" | "operator";
       },
-    ) => {
-      const users = loadUsers();
+    ): void => {
       const key = username.toLowerCase();
-      if (!users[key]) return;
-      users[key] = { ...users[key], ...updates };
-      saveUsers(users);
+      setUsersCache((prev) => {
+        const cur = prev[key];
+        if (!cur) return prev;
+        const updated = { ...cur, ...updates };
+        callBackend((a) =>
+          a.updateUser(
+            username,
+            updates.password ? btoa(updates.password) : btoa(cur.password),
+            updates.name ?? cur.name,
+            updates.role ?? cur.role,
+          ),
+        );
+        return { ...prev, [key]: updated };
+      });
     },
     [],
   );
 
-  const deleteUser = useCallback((username: string) => {
-    const users = loadUsers();
-    delete users[username.toLowerCase()];
-    saveUsers(users);
+  const deleteUser = useCallback((username: string): void => {
+    const key = username.toLowerCase();
+    setUsersCache((prev) => {
+      const next = { ...prev };
+      delete next[key];
+      return next;
+    });
+    callBackend((a) => a.deleteUser(username));
   }, []);
 
+  // ── machines ──────────────────────────────────────────────────────────────
   const addMachine = useCallback((m: MachineExtended) => {
     setMachines((prev) => {
       const exists = prev.findIndex((x) => x.id === m.id);
-      if (exists >= 0) {
-        const updated = [...prev];
-        updated[exists] = m;
-        return updated;
-      }
-      return [...prev, m];
+      const next =
+        exists >= 0 ? prev.map((x, i) => (i === exists ? m : x)) : [...prev, m];
+      callBackend((a) => a.saveMachine(toBackendMachine(m)));
+      return next;
     });
   }, []);
 
   const updateMachine = useCallback(
     (id: string, updates: Partial<MachineExtended>) => {
-      setMachines((prev) =>
-        prev.map((m) => (m.id === id ? { ...m, ...updates } : m)),
-      );
+      setMachines((prev) => {
+        const next = prev.map((m) => (m.id === id ? { ...m, ...updates } : m));
+        const updated = next.find((m) => m.id === id);
+        if (updated)
+          callBackend((a) => a.saveMachine(toBackendMachine(updated)));
+        return next;
+      });
     },
     [],
   );
 
   const deleteMachine = useCallback((id: string) => {
     setMachines((prev) => prev.filter((m) => m.id !== id));
+    callBackend((a) => a.deleteMachine(id));
   }, []);
 
+  // ── PM plans ──────────────────────────────────────────────────────────────
   const addPMPlan = useCallback((p: PMPlan) => {
+    const extended: PMPlanExtended = p;
     setPmPlans((prev) => {
       const exists = prev.findIndex(
         (x) => x.machineId === p.machineId && x.month === p.month,
       );
-      if (exists >= 0) {
-        const updated = [...prev];
-        updated[exists] = p;
-        return updated;
-      }
-      return [...prev, p];
+      const next =
+        exists >= 0
+          ? prev.map((x, i) => (i === exists ? extended : x))
+          : [...prev, extended];
+      callBackend((a) => a.savePMPlan(toBackendPMPlan(extended)));
+      return next;
     });
   }, []);
 
   const updatePMPlan = useCallback(
     (machineId: string, month: bigint, updates: Partial<PMPlanExtended>) => {
-      setPmPlans((prev) =>
-        prev.map((p) =>
+      setPmPlans((prev) => {
+        const next = prev.map((p) =>
           p.machineId === machineId && p.month === month
             ? { ...p, ...updates }
             : p,
-        ),
-      );
+        );
+        const updated = next.find(
+          (p) => p.machineId === machineId && p.month === month,
+        );
+        if (updated) callBackend((a) => a.savePMPlan(toBackendPMPlan(updated)));
+        return next;
+      });
     },
     [],
   );
 
   const deletePMPlan = useCallback((machineId: string, month: bigint) => {
-    setPmPlans((prev) =>
-      prev.filter((p) => !(p.machineId === machineId && p.month === month)),
-    );
+    setPmPlans((prev) => {
+      const toDelete = prev.find(
+        (p) => p.machineId === machineId && p.month === month,
+      );
+      if (toDelete)
+        callBackend((a) =>
+          a.deletePMPlan(toDelete.id ?? `plan-${machineId}-${month}`),
+        );
+      return prev.filter(
+        (p) => !(p.machineId === machineId && p.month === month),
+      );
+    });
   }, []);
 
+  // ── checklist templates ───────────────────────────────────────────────────
   const addChecklistTemplate = useCallback((t: ChecklistTemplate) => {
     setChecklistTemplates((prev) => {
       const idx = prev.findIndex((x) => x.id === t.id);
-      if (idx >= 0) {
-        const updated = [...prev];
-        updated[idx] = t;
-        return updated;
-      }
-      return [...prev, t];
+      const next =
+        idx >= 0 ? prev.map((x, i) => (i === idx ? t : x)) : [...prev, t];
+      callBackend((a) => a.saveChecklistTemplate(t));
+      return next;
     });
   }, []);
 
   const updateChecklistTemplates = useCallback(
     (templates: ChecklistTemplate[]) => {
       setChecklistTemplates(templates);
+      for (const t of templates) {
+        callBackend((a) => a.saveChecklistTemplate(t));
+      }
     },
     [],
   );
 
+  // ── PM records ────────────────────────────────────────────────────────────
   const submitRecord = useCallback((r: PMRecord) => {
     const pendingRecord: PMRecord = { ...r, status: "pending-approval" };
     setPmRecords((prev) => {
@@ -974,29 +1555,17 @@ export function AppProvider({ children }: { children: ReactNode }) {
           rec.status === "rejected" &&
           Number(rec.completedDate) >= todayStart.getTime(),
       );
-      if (rejectedIdx >= 0) {
-        const updated = [...prev];
-        updated[rejectedIdx] = pendingRecord;
-        return updated;
-      }
-      return [...prev, pendingRecord];
+      const next =
+        rejectedIdx >= 0
+          ? prev.map((rec, i) => (i === rejectedIdx ? pendingRecord : rec))
+          : [...prev, pendingRecord];
+      callBackend((a) => a.savePMRecord(toBackendPMRecord(pendingRecord)));
+      return next;
     });
     setNotifications((prev) => [
       {
         id: `notif-${Date.now()}`,
         message: `🔔 New Submission — ${r.machineId} checklist submitted by ${r.operatorName}. Awaiting approval.`,
-        timestamp: Date.now(),
-        read: false,
-      },
-      ...prev,
-    ]);
-  }, []);
-
-  const addNotification = useCallback((message: string) => {
-    setNotifications((prev) => [
-      {
-        id: `notif-${Date.now()}-${Math.random()}`,
-        message,
         timestamp: Date.now(),
         read: false,
       },
@@ -1023,11 +1592,19 @@ export function AppProvider({ children }: { children: ReactNode }) {
             sourceId: record.id,
             createdAt: Date.now(),
           };
-          setHistoryCards((h) => [...h, entry]);
+          setHistoryCards((h) => {
+            const next = [...h, entry];
+            callBackend((a) => a.saveHistoryEntry(toBackendHistory(entry)));
+            return next;
+          });
         }
-        return prev.map((r) =>
+        const next = prev.map((r) =>
           r.id === id ? { ...r, status: "completed" } : r,
         );
+        const updated = next.find((r) => r.id === id);
+        if (updated)
+          callBackend((a) => a.savePMRecord(toBackendPMRecord(updated)));
+        return next;
       });
       setNotifications((prev) => [
         {
@@ -1043,13 +1620,31 @@ export function AppProvider({ children }: { children: ReactNode }) {
   );
 
   const rejectRecord = useCallback((id: string) => {
-    setPmRecords((prev) =>
-      prev.map((r) => (r.id === id ? { ...r, status: "rejected" } : r)),
-    );
+    setPmRecords((prev) => {
+      const next = prev.map((r) =>
+        r.id === id ? { ...r, status: "rejected" } : r,
+      );
+      const updated = next.find((r) => r.id === id);
+      if (updated)
+        callBackend((a) => a.savePMRecord(toBackendPMRecord(updated)));
+      return next;
+    });
     setNotifications((prev) => [
       {
         id: `notif-${Date.now()}`,
         message: "❌ PM Rejected. Operator can now resubmit for approval.",
+        timestamp: Date.now(),
+        read: false,
+      },
+      ...prev,
+    ]);
+  }, []);
+
+  const addNotification = useCallback((message: string) => {
+    setNotifications((prev) => [
+      {
+        id: `notif-${Date.now()}-${Math.random()}`,
+        message,
         timestamp: Date.now(),
         read: false,
       },
@@ -1107,8 +1702,13 @@ export function AppProvider({ children }: { children: ReactNode }) {
     [pmRecords],
   );
 
+  // ── breakdown ─────────────────────────────────────────────────────────────
   const submitBreakdown = useCallback((r: BreakdownRecord) => {
-    setBreakdownRecords((prev) => [...prev, r]);
+    setBreakdownRecords((prev) => {
+      const next = [...prev, r];
+      callBackend((a) => a.saveBreakdownRecord(toBackendBreakdown(r)));
+      return next;
+    });
     setNotifications((prev) => [
       {
         id: `notif-bd-${Date.now()}`,
@@ -1136,6 +1736,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
         const shouldAddHistory = autoHistory || (isBreakdown && addToHistory);
         const createCapa =
           isBreakdown && (record.durationMinutes > 60 || addToCapa);
+
         if (createCapa) {
           const capa: CAPARecord = {
             id: `capa-${Date.now()}`,
@@ -1152,7 +1753,11 @@ export function AppProvider({ children }: { children: ReactNode }) {
             status: "Open",
             createdAt: Date.now(),
           };
-          setCapaRecords((c) => [...c, capa]);
+          setCapaRecords((c) => {
+            const next = [...c, capa];
+            callBackend((a) => a.saveCAPARecord(toBackendCapa(capa)));
+            return next;
+          });
           setNotifications((n) => [
             {
               id: `notif-capa-${Date.now()}`,
@@ -1163,6 +1768,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
             ...n,
           ]);
         }
+
         if (shouldAddHistory) {
           const entry: HistoryCardEntry = {
             id: `hist-bd-${Date.now()}`,
@@ -1178,22 +1784,34 @@ export function AppProvider({ children }: { children: ReactNode }) {
             sourceId: id,
             createdAt: Date.now(),
           };
-          setHistoryCards((h) => [...h, entry]);
+          setHistoryCards((h) => {
+            const next = [...h, entry];
+            callBackend((a) => a.saveHistoryEntry(toBackendHistory(entry)));
+            return next;
+          });
         }
+
         const newStatus = isBreakdown
           ? "approved-breakdown"
           : "approved-service";
-        return prev.map((r) =>
-          r.id === id
-            ? {
-                ...r,
-                status: newStatus,
-                isInCapa: createCapa,
-                isInHistory: shouldAddHistory,
-                adminRemarks,
-              }
-            : r,
+        const next: BreakdownRecord[] = prev.map(
+          (r): BreakdownRecord =>
+            r.id === id
+              ? {
+                  ...r,
+                  status: newStatus as BreakdownRecord["status"],
+                  isInCapa: createCapa,
+                  isInHistory: shouldAddHistory,
+                  adminRemarks,
+                }
+              : r,
         );
+        const updated = next.find((r) => r.id === id);
+        if (updated)
+          callBackend((a) =>
+            a.saveBreakdownRecord(toBackendBreakdown(updated)),
+          );
+        return next;
       });
       setNotifications((prev) => [
         {
@@ -1209,9 +1827,16 @@ export function AppProvider({ children }: { children: ReactNode }) {
   );
 
   const rejectBreakdown = useCallback((id: string) => {
-    setBreakdownRecords((prev) =>
-      prev.map((r) => (r.id === id ? { ...r, status: "rejected" } : r)),
-    );
+    setBreakdownRecords((prev) => {
+      const next = prev.map(
+        (r): BreakdownRecord =>
+          r.id === id ? { ...r, status: "rejected" as const } : r,
+      );
+      const updated = next.find((r) => r.id === id);
+      if (updated)
+        callBackend((a) => a.saveBreakdownRecord(toBackendBreakdown(updated)));
+      return next;
+    });
     setNotifications((prev) => [
       {
         id: `notif-bd-rej-${Date.now()}`,
@@ -1225,13 +1850,22 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
   const updateBreakdown = useCallback(
     (id: string, updates: Partial<BreakdownRecord>) => {
-      setBreakdownRecords((prev) =>
-        prev.map((r) => (r.id === id ? { ...r, ...updates } : r)),
-      );
+      setBreakdownRecords((prev) => {
+        const next = prev.map((r) => (r.id === id ? { ...r, ...updates } : r));
+        const updated = next.find((r) => r.id === id);
+        if (updated)
+          callBackend((a) =>
+            a.saveBreakdownRecord(
+              toBackendBreakdown(updated as BreakdownRecord),
+            ),
+          );
+        return next;
+      });
     },
     [],
   );
 
+  // ── CAPA ──────────────────────────────────────────────────────────────────
   const updateCapa = useCallback((id: string, updates: Partial<CAPARecord>) => {
     setCapaRecords((prev) =>
       prev.map((c) => {
@@ -1249,51 +1883,97 @@ export function AppProvider({ children }: { children: ReactNode }) {
             ...n,
           ]);
         }
+        callBackend((a) => a.saveCAPARecord(toBackendCapa(updated)));
         return updated;
       }),
     );
   }, []);
 
+  // ── history cards ─────────────────────────────────────────────────────────
   const addHistoryEntry = useCallback((entry: HistoryCardEntry) => {
-    setHistoryCards((prev) => [...prev, entry]);
+    setHistoryCards((prev) => {
+      const next = [...prev, entry];
+      callBackend((a) => a.saveHistoryEntry(toBackendHistory(entry)));
+      return next;
+    });
   }, []);
+
   const updateHistoryEntry = useCallback(
     (id: string, updates: Partial<HistoryCardEntry>) => {
-      setHistoryCards((prev) =>
-        prev.map((h) => (h.id === id ? { ...h, ...updates } : h)),
-      );
+      setHistoryCards((prev) => {
+        const next = prev.map((h) => (h.id === id ? { ...h, ...updates } : h));
+        const updated = next.find((h) => h.id === id);
+        if (updated)
+          callBackend((a) => a.saveHistoryEntry(toBackendHistory(updated)));
+        return next;
+      });
     },
     [],
   );
+
   const deleteHistoryEntry = useCallback((id: string) => {
     setHistoryCards((prev) => prev.filter((h) => h.id !== id));
+    callBackend((a) => a.deleteHistoryEntry(id));
   }, []);
+
   const importBreakdownRecords = useCallback((records: BreakdownRecord[]) => {
-    setBreakdownRecords((prev) => [...prev, ...records]);
+    setBreakdownRecords((prev) => {
+      const next = [...prev, ...records];
+      for (const r of records)
+        callBackend((a) => a.saveBreakdownRecord(toBackendBreakdown(r)));
+      return next;
+    });
   }, []);
+
   const importCapaRecords = useCallback((records: CAPARecord[]) => {
-    setCapaRecords((prev) => [...prev, ...records]);
+    setCapaRecords((prev) => {
+      const next = [...prev, ...records];
+      for (const r of records)
+        callBackend((a) => a.saveCAPARecord(toBackendCapa(r)));
+      return next;
+    });
   }, []);
+
   const importHistoryEntries = useCallback((entries: HistoryCardEntry[]) => {
-    setHistoryCards((prev) => [...prev, ...entries]);
+    setHistoryCards((prev) => {
+      const next = [...prev, ...entries];
+      for (const e of entries)
+        callBackend((a) => a.saveHistoryEntry(toBackendHistory(e)));
+      return next;
+    });
   }, []);
+
+  // ── section hours ─────────────────────────────────────────────────────────
   const updateSectionHoursConfig = useCallback(
     (
       section: string,
       updates: Partial<Omit<SectionHoursConfig, "section">>,
     ) => {
-      setSectionHoursConfigs((prev) =>
-        prev.map((c) => (c.section === section ? { ...c, ...updates } : c)),
-      );
+      setSectionHoursConfigs((prev) => {
+        const next = prev.map((c) =>
+          c.section === section ? { ...c, ...updates } : c,
+        );
+        const updated = next.find((c) => c.section === section);
+        if (updated) callBackend((a) => a.saveSectionHoursConfig(updated));
+        return next;
+      });
     },
     [],
   );
+
+  // ── prioritized machines ──────────────────────────────────────────────────
   const setPrioritizedMachines = useCallback((ids: string[]) => {
     setPrioritizedMachineIds(ids);
+    callBackend((a) => a.setPrioritizedMachines(ids));
   }, []);
 
+  // ── tasks ─────────────────────────────────────────────────────────────────
   const addTask = useCallback((task: TaskRecord) => {
-    setTaskRecords((prev) => [...prev, task]);
+    setTaskRecords((prev) => {
+      const next = [...prev, task];
+      callBackend((a) => a.saveTaskRecord(toBackendTask(task)));
+      return next;
+    });
     setNotifications((prev) => [
       {
         id: `notif-task-${Date.now()}`,
@@ -1306,9 +1986,12 @@ export function AppProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const updateTask = useCallback((id: string, updates: Partial<TaskRecord>) => {
-    setTaskRecords((prev) =>
-      prev.map((t) => (t.id === id ? { ...t, ...updates } : t)),
-    );
+    setTaskRecords((prev) => {
+      const next = prev.map((t) => (t.id === id ? { ...t, ...updates } : t));
+      const updated = next.find((t) => t.id === id);
+      if (updated) callBackend((a) => a.saveTaskRecord(toBackendTask(updated)));
+      return next;
+    });
     if (updates.status) {
       setNotifications((prev) => [
         {
@@ -1324,19 +2007,36 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
   const deleteTask = useCallback((id: string) => {
     setTaskRecords((prev) => prev.filter((t) => t.id !== id));
+    callBackend((a) => a.deleteTaskRecord(id));
   }, []);
 
   const importTasks = useCallback((records: TaskRecord[]) => {
-    setTaskRecords((prev) => [...prev, ...records]);
+    setTaskRecords((prev) => {
+      const next = [...prev, ...records];
+      for (const r of records)
+        callBackend((a) => a.saveTaskRecord(toBackendTask(r)));
+      return next;
+    });
   }, []);
 
+  // ── BD targets ────────────────────────────────────────────────────────────
   const updateBDTargets = useCallback((targets: Partial<BDTargets>) => {
-    setBdTargets((prev) => ({ ...prev, ...targets }));
+    setBdTargets((prev) => {
+      const next = { ...prev, ...targets };
+      for (const [section, vals] of Object.entries(targets)) {
+        callBackend((a) => a.saveBDTarget(section, vals as any));
+      }
+      return next;
+    });
   }, []);
 
-  // Kaizen
+  // ── kaizen ────────────────────────────────────────────────────────────────
   const addKaizen = useCallback((k: KaizenRecord) => {
-    setKaizenRecords((prev) => [...prev, k]);
+    setKaizenRecords((prev) => {
+      const next = [...prev, k];
+      callBackend((a) => a.saveKaizenRecord(toBackendKaizen(k)));
+      return next;
+    });
     setNotifications((prev) => [
       {
         id: `notif-kaizen-${Date.now()}`,
@@ -1350,33 +2050,52 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
   const updateKaizen = useCallback(
     (id: string, updates: Partial<KaizenRecord>) => {
-      setKaizenRecords((prev) =>
-        prev.map((k) => (k.id === id ? { ...k, ...updates } : k)),
-      );
+      setKaizenRecords((prev) => {
+        const next = prev.map((k) => (k.id === id ? { ...k, ...updates } : k));
+        const updated = next.find((k) => k.id === id);
+        if (updated)
+          callBackend((a) => a.saveKaizenRecord(toBackendKaizen(updated)));
+        return next;
+      });
     },
     [],
   );
 
-  // Predictive
+  // ── predictive ────────────────────────────────────────────────────────────
   const addPredictivePlan = useCallback((p: PredictivePlan) => {
-    setPredictivePlans((prev) => [...prev, p]);
+    setPredictivePlans((prev) => {
+      const next = [...prev, p];
+      callBackend((a) => a.savePredictivePlan(toBackendPredictivePlan(p)));
+      return next;
+    });
   }, []);
 
   const updatePredictivePlan = useCallback(
     (id: string, updates: Partial<PredictivePlan>) => {
-      setPredictivePlans((prev) =>
-        prev.map((p) => (p.id === id ? { ...p, ...updates } : p)),
-      );
+      setPredictivePlans((prev) => {
+        const next = prev.map((p) => (p.id === id ? { ...p, ...updates } : p));
+        const updated = next.find((p) => p.id === id);
+        if (updated)
+          callBackend((a) =>
+            a.savePredictivePlan(toBackendPredictivePlan(updated)),
+          );
+        return next;
+      });
     },
     [],
   );
 
   const deletePredictivePlan = useCallback((id: string) => {
     setPredictivePlans((prev) => prev.filter((p) => p.id !== id));
+    callBackend((a) => a.deletePredictivePlan(id));
   }, []);
 
   const submitPredictiveRecord = useCallback((r: PredictiveRecord) => {
-    setPredictiveRecords((prev) => [...prev, r]);
+    setPredictiveRecords((prev) => {
+      const next = [...prev, r];
+      callBackend((a) => a.savePredictiveRecord(toBackendPredictiveRecord(r)));
+      return next;
+    });
     setNotifications((prev) => [
       {
         id: `notif-pdm-${Date.now()}`,
@@ -1389,57 +2108,99 @@ export function AppProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const approvePredictiveRecord = useCallback((id: string) => {
-    setPredictiveRecords((prev) =>
-      prev.map((r) => (r.id === id ? { ...r, status: "completed" } : r)),
-    );
+    setPredictiveRecords((prev) => {
+      const next = prev.map(
+        (r): PredictiveRecord =>
+          r.id === id ? { ...r, status: "completed" as const } : r,
+      );
+      const updated = next.find((r) => r.id === id);
+      if (updated)
+        callBackend((a) =>
+          a.savePredictiveRecord(toBackendPredictiveRecord(updated)),
+        );
+      return next;
+    });
   }, []);
 
-  // Electricity
+  // ── electricity ───────────────────────────────────────────────────────────
   const addElectricityMeter = useCallback((m: ElectricityMeter) => {
-    setElectricityMeters((prev) => [...prev, m]);
+    setElectricityMeters((prev) => {
+      const next = [...prev, m];
+      callBackend((a) => a.saveElectricityMeter(toBackendElectricityMeter(m)));
+      return next;
+    });
   }, []);
 
   const updateElectricityMeter = useCallback(
     (id: string, updates: Partial<ElectricityMeter>) => {
-      setElectricityMeters((prev) =>
-        prev.map((m) => (m.id === id ? { ...m, ...updates } : m)),
-      );
+      setElectricityMeters((prev) => {
+        const next = prev.map((m) => (m.id === id ? { ...m, ...updates } : m));
+        const updated = next.find((m) => m.id === id);
+        if (updated)
+          callBackend((a) =>
+            a.saveElectricityMeter(toBackendElectricityMeter(updated)),
+          );
+        return next;
+      });
     },
     [],
   );
 
   const deleteElectricityMeter = useCallback((id: string) => {
     setElectricityMeters((prev) => prev.filter((m) => m.id !== id));
+    callBackend((a) => a.deleteElectricityMeter(id));
   }, []);
 
   const addMeterReading = useCallback((r: MeterReading) => {
-    setMeterReadings((prev) => [...prev, r]);
+    setMeterReadings((prev) => {
+      const next = [...prev, r];
+      callBackend((a) => a.saveMeterReading(toBackendMeterReading(r)));
+      return next;
+    });
   }, []);
 
   const deleteMeterReading = useCallback((id: string) => {
     setMeterReadings((prev) => prev.filter((r) => r.id !== id));
+    callBackend((a) => a.deleteMeterReading(id));
   }, []);
 
-  // Logbook
+  // ── logbook ───────────────────────────────────────────────────────────────
   const addLogbookCheckItem = useCallback((item: LogbookCheckItem) => {
-    setLogbookCheckItems((prev) => [...prev, item]);
+    setLogbookCheckItems((prev) => {
+      const next = [...prev, item];
+      callBackend((a) =>
+        a.saveLogbookCheckItem(toBackendLogbookCheckItem(item)),
+      );
+      return next;
+    });
   }, []);
 
   const updateLogbookCheckItem = useCallback(
     (id: string, updates: Partial<LogbookCheckItem>) => {
-      setLogbookCheckItems((prev) =>
-        prev.map((i) => (i.id === id ? { ...i, ...updates } : i)),
-      );
+      setLogbookCheckItems((prev) => {
+        const next = prev.map((i) => (i.id === id ? { ...i, ...updates } : i));
+        const updated = next.find((i) => i.id === id);
+        if (updated)
+          callBackend((a) =>
+            a.saveLogbookCheckItem(toBackendLogbookCheckItem(updated)),
+          );
+        return next;
+      });
     },
     [],
   );
 
   const deleteLogbookCheckItem = useCallback((id: string) => {
     setLogbookCheckItems((prev) => prev.filter((i) => i.id !== id));
+    callBackend((a) => a.deleteLogbookCheckItem(id));
   }, []);
 
   const submitLogbookEntry = useCallback((entry: LogbookEntry) => {
-    setLogbookEntries((prev) => [...prev, entry]);
+    setLogbookEntries((prev) => {
+      const next = [...prev, entry];
+      callBackend((a) => a.saveLogbookEntry(toBackendLogbookEntry(entry)));
+      return next;
+    });
     setNotifications((prev) => [
       {
         id: `notif-logbook-${Date.now()}`,
@@ -1451,30 +2212,94 @@ export function AppProvider({ children }: { children: ReactNode }) {
     ]);
   }, []);
 
+  // ── spares ────────────────────────────────────────────────────────────────
   const addSpareItem = useCallback((item: SpareItem) => {
-    setSpareItems((prev) => [...prev, item]);
+    setSpareItems((prev) => {
+      const next = [...prev, item];
+      callBackend((a) => a.saveSpareItem(toBackendSpareItem(item)));
+      return next;
+    });
   }, []);
 
   const updateSpareItem = useCallback(
     (id: string, updates: Partial<SpareItem>) => {
-      setSpareItems((prev) =>
-        prev.map((s) => (s.id === id ? { ...s, ...updates } : s)),
-      );
+      setSpareItems((prev) => {
+        const next = prev.map((s) => (s.id === id ? { ...s, ...updates } : s));
+        const updated = next.find((s) => s.id === id);
+        if (updated)
+          callBackend((a) => a.saveSpareItem(toBackendSpareItem(updated)));
+        return next;
+      });
     },
     [],
   );
 
   const deleteSpareItem = useCallback((id: string) => {
     setSpareItems((prev) => prev.filter((s) => s.id !== id));
+    callBackend((a) => a.deleteSpareItem(id));
   }, []);
 
   const importSpareItems = useCallback((items: SpareItem[]) => {
-    setSpareItems((prev) => [...prev, ...items]);
+    setSpareItems((prev) => {
+      const next = [...prev, ...items];
+      for (const item of items)
+        callBackend((a) => a.saveSpareItem(toBackendSpareItem(item)));
+      return next;
+    });
   }, []);
 
   const addPMSpareUsage = useCallback((usage: PMSpareUsage) => {
-    setPmSpareUsage((prev) => [...prev, usage]);
+    setPmSpareUsage((prev) => {
+      const next = [...prev, usage];
+      callBackend((a) => a.savePMSpareUsage(toBackendPMSpareUsage(usage)));
+      return next;
+    });
   }, []);
+
+  // ── loading screen ────────────────────────────────────────────────────────
+  if (isLoading && !dataLoaded) {
+    return (
+      <div
+        style={{
+          minHeight: "100vh",
+          background: "oklch(0.165 0.022 252)",
+          display: "flex",
+          flexDirection: "column",
+          alignItems: "center",
+          justifyContent: "center",
+          gap: "1.5rem",
+          color: "oklch(0.88 0.010 260)",
+          fontFamily: "sans-serif",
+        }}
+      >
+        <div
+          style={{
+            width: "48px",
+            height: "48px",
+            borderRadius: "50%",
+            border: "3px solid oklch(0.70 0.188 55 / 0.3)",
+            borderTopColor: "oklch(0.70 0.188 55)",
+            animation: "spin 0.8s linear infinite",
+          }}
+        />
+        <style>{"@keyframes spin { to { transform: rotate(360deg); } }"}</style>
+        <div style={{ textAlign: "center" }}>
+          <div
+            style={{
+              fontSize: "1.125rem",
+              fontWeight: 600,
+              marginBottom: "0.5rem",
+            }}
+          >
+            Plant Maintenance Management System
+          </div>
+          <div style={{ color: "oklch(0.65 0.010 260)", fontSize: "0.875rem" }}>
+            Loading data from server...
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <AppContext.Provider
@@ -1482,6 +2307,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
         user,
         login,
         logout,
+        isLoading,
         machines,
         pmPlans,
         checklistTemplates,

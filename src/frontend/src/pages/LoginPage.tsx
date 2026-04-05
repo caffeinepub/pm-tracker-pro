@@ -19,8 +19,7 @@ export default function LoginPage() {
     e.preventDefault();
     setError("");
     setIsLoading(true);
-    await new Promise((r) => setTimeout(r, 600));
-    const success = login(username, password);
+    const success = await login(username, password);
     setIsLoading(false);
     if (success) {
       toast.success("Login successful. Welcome back!");
