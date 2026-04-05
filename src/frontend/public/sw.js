@@ -1,4 +1,4 @@
-const CACHE_NAME = 'pm-tracker-v1';
+const CACHE_NAME = 'pmms-v2';
 const urlsToCache = [
   '/',
   '/index.html',

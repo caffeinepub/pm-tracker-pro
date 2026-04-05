@@ -1,24 +1,27 @@
 {
-  "name": "PM Tracker",
-  "short_name": "PM Tracker",
-  "description": "Industrial Preventive Maintenance Tracker",
+  "name": "Plant Maintenance Management System",
+  "short_name": "PMMS",
+  "description": "Industrial Plant Maintenance Management System — Preventive, Predictive & Breakdown",
   "start_url": "/",
   "display": "standalone",
-  "background_color": "#1a2030",
-  "theme_color": "#1a2030",
+  "background_color": "#0f1e35",
+  "theme_color": "#0f1e35",
   "orientation": "portrait-primary",
+  "categories": ["productivity", "utilities", "business"],
   "icons": [
     {
-      "src": "/assets/generated/pwa-icon-192.dim_192x192.png",
+      "src": "/assets/generated/pmms-icon-192.dim_192x192.png",
       "sizes": "192x192",
       "type": "image/png",
       "purpose": "any maskable"
     },
     {
-      "src": "/assets/generated/pwa-icon-512.dim_512x512.png",
+      "src": "/assets/generated/pmms-icon-512.dim_512x512.png",
       "sizes": "512x512",
       "type": "image/png",
       "purpose": "any maskable"
     }
-  ]
+  ],
+  "screenshots": [],
+  "prefer_related_applications": false
 }
